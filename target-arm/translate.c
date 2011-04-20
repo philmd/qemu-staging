@@ -2530,14 +2530,15 @@ static int disas_cp15_insn(CPUState *env, DisasContext *s, uint32_t insn)
         /* cdp */
         return 1;
     }
-    if (IS_USER(s) && !cp15_user_ok(insn)) {
-        return 1;
-    }
 
-    /* Pre-v7 versions of the architecture implemented WFI via coprocessor
-     * instructions rather than a separate instruction.
+    /* We special case a number of cp15 instructions which were used
+     * for things which are real instructions in ARMv7. This allows
+     * them to work in linux-user mode which doesn't provide functional
+     * get_cp15/set_cp15 helpers, and is more efficient anyway.
+     * These are all OK in both user and system mode.
      */
-    if ((insn & 0x0fff0fff) == 0x0e070f90) {
+    switch ((insn & 0x0fff0fff)) {
+    case 0x0e070f90:
         /* 0,c7,c0,4: Standard v6 WFI (also used in some pre-v6 cores).
          * In v7, this must NOP.
          */
@@ -2547,9 +2548,7 @@ static int disas_cp15_insn(CPUState *env, DisasContext *s, uint32_t insn)
             s->is_jmp = DISAS_WFI;
         }
         return 0;
-    }
-
-    if ((insn & 0x0fff0fff) == 0x0e070f58) {
+    case 0x0e070f58:
         /* 0,c7,c8,2: Not all pre-v6 cores implemented this WFI,
          * so this is slightly over-broad.
          */
@@ -2563,6 +2562,19 @@ static int disas_cp15_insn(CPUState *env, DisasContext *s, uint32_t insn)
          * In particular, on v7 and some v6 cores this is one of
          * the VA-PA registers.
          */
+        break;
+    case 0x0e070f95: /* 0,c7,c5,4 : ISB */
+    case 0x0e070f9a: /* 0,c7,c10,4: DSB */
+    case 0x0e070fba: /* 0,c7,c10,5: DMB */
+    case 0x0e070f3d: /* 0,c7,c13,1: prefetch-by-MVA in v6, NOP in v7 */
+        if (arm_feature(env, ARM_FEATURE_V6)) {
+            return 0;
+        }
+        break;
+    }
+
+    if (IS_USER(s) && !cp15_user_ok(insn)) {
+        return 1;
     }
 
     rd = (insn >> 12) & 0xf;

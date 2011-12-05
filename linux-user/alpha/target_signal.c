@@ -1,0 +1,299 @@
+/*
+ *  Emulation of Linux signals : ARM specific code
+ *
+ *  Copyright (c) 2003 Fabrice Bellard
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <errno.h>
+#include <assert.h>
+#include <sys/ucontext.h>
+#include <sys/resource.h>
+
+#include "qemu.h"
+#include "qemu-common.h"
+#include "signal-common.h"
+#include "target_signal.h"
+
+struct target_sigcontext {
+    abi_long sc_onstack;
+    abi_long sc_mask;
+    abi_long sc_pc;
+    abi_long sc_ps;
+    abi_long sc_regs[32];
+    abi_long sc_ownedfp;
+    abi_long sc_fpregs[32];
+    abi_ulong sc_fpcr;
+    abi_ulong sc_fp_control;
+    abi_ulong sc_reserved1;
+    abi_ulong sc_reserved2;
+    abi_ulong sc_ssize;
+    abi_ulong sc_sbase;
+    abi_ulong sc_traparg_a0;
+    abi_ulong sc_traparg_a1;
+    abi_ulong sc_traparg_a2;
+    abi_ulong sc_fp_trap_pc;
+    abi_ulong sc_fp_trigger_sum;
+    abi_ulong sc_fp_trigger_inst;
+};
+
+struct target_ucontext {
+    abi_ulong tuc_flags;
+    abi_ulong tuc_link;
+    abi_ulong tuc_osf_sigmask;
+    target_stack_t tuc_stack;
+    struct target_sigcontext tuc_mcontext;
+    target_sigset_t tuc_sigmask;
+};
+
+struct target_sigframe {
+    struct target_sigcontext sc;
+    unsigned int retcode[3];
+};
+
+struct target_rt_sigframe {
+    target_siginfo_t info;
+    struct target_ucontext uc;
+    unsigned int retcode[3];
+};
+
+#define INSN_MOV_R30_R16        0x47fe0410
+#define INSN_LDI_R0             0x201f0000
+#define INSN_CALLSYS            0x00000083
+
+static int setup_sigcontext(struct target_sigcontext *sc, CPUState *env,
+                            abi_ulong frame_addr, target_sigset_t *set)
+{
+    int i, err = 0;
+
+    err |= __put_user(on_sig_stack(frame_addr), &sc->sc_onstack);
+    err |= __put_user(set->sig[0], &sc->sc_mask);
+    err |= __put_user(env->pc, &sc->sc_pc);
+    err |= __put_user(8, &sc->sc_ps);
+
+    for (i = 0; i < 31; ++i) {
+        err |= __put_user(env->ir[i], &sc->sc_regs[i]);
+    }
+    err |= __put_user(0, &sc->sc_regs[31]);
+
+    for (i = 0; i < 31; ++i) {
+        err |= __put_user(env->fir[i], &sc->sc_fpregs[i]);
+    }
+    err |= __put_user(0, &sc->sc_fpregs[31]);
+    err |= __put_user(cpu_alpha_load_fpcr(env), &sc->sc_fpcr);
+
+    err |= __put_user(0, &sc->sc_traparg_a0); /* FIXME */
+    err |= __put_user(0, &sc->sc_traparg_a1); /* FIXME */
+    err |= __put_user(0, &sc->sc_traparg_a2); /* FIXME */
+
+    return err;
+}
+
+static int restore_sigcontext(CPUState *env, struct target_sigcontext *sc)
+{
+    uint64_t fpcr;
+    int i, err = 0;
+
+    err |= __get_user(env->pc, &sc->sc_pc);
+
+    for (i = 0; i < 31; ++i) {
+        err |= __get_user(env->ir[i], &sc->sc_regs[i]);
+    }
+    for (i = 0; i < 31; ++i) {
+        err |= __get_user(env->fir[i], &sc->sc_fpregs[i]);
+    }
+
+    err |= __get_user(fpcr, &sc->sc_fpcr);
+    cpu_alpha_store_fpcr(env, fpcr);
+
+    return err;
+}
+
+static inline abi_ulong get_sigframe(struct target_sigaction *sa,
+                                     CPUState *env, unsigned long framesize)
+{
+    abi_ulong sp = env->ir[IR_SP];
+
+    /* This is the X/Open sanctioned signal stack switching.  */
+    if ((sa->sa_flags & TARGET_SA_ONSTACK) != 0 && !sas_ss_flags(sp)) {
+        sp = target_sigaltstack_used.ss_sp + target_sigaltstack_used.ss_size;
+    }
+    return (sp - framesize) & -32;
+}
+
+void setup_frame(int sig, struct target_sigaction *ka,
+                 target_sigset_t *set, CPUState *env)
+{
+    abi_ulong frame_addr, r26;
+    struct target_sigframe *frame;
+    int err = 0;
+
+    frame_addr = get_sigframe(ka, env, sizeof(*frame));
+    if (!lock_user_struct(VERIFY_WRITE, frame, frame_addr, 0)) {
+        goto give_sigsegv;
+    }
+
+    err |= setup_sigcontext(&frame->sc, env, frame_addr, set);
+
+    if (ka->sa_restorer) {
+        r26 = ka->sa_restorer;
+    } else {
+        err |= __put_user(INSN_MOV_R30_R16, &frame->retcode[0]);
+        err |= __put_user(INSN_LDI_R0 + TARGET_NR_sigreturn,
+                          &frame->retcode[1]);
+        err |= __put_user(INSN_CALLSYS, &frame->retcode[2]);
+        /* imb() */
+        r26 = frame_addr;
+    }
+
+    unlock_user_struct(frame, frame_addr, 1);
+
+    if (err) {
+    give_sigsegv:
+        if (sig == TARGET_SIGSEGV) {
+            ka->_sa_handler = TARGET_SIG_DFL;
+        }
+        force_sig(TARGET_SIGSEGV);
+    }
+
+    env->ir[IR_RA] = r26;
+    env->ir[IR_PV] = env->pc = ka->_sa_handler;
+    env->ir[IR_A0] = sig;
+    env->ir[IR_A1] = 0;
+    env->ir[IR_A2] = frame_addr + offsetof(struct target_sigframe, sc);
+    env->ir[IR_SP] = frame_addr;
+}
+
+void setup_rt_frame(int sig, struct target_sigaction *ka,
+                    target_siginfo_t *info,
+                    target_sigset_t *set, CPUState *env)
+{
+    abi_ulong frame_addr, r26;
+    struct target_rt_sigframe *frame;
+    int i, err = 0;
+
+    frame_addr = get_sigframe(ka, env, sizeof(*frame));
+    if (!lock_user_struct(VERIFY_WRITE, frame, frame_addr, 0)) {
+        goto give_sigsegv;
+    }
+
+    err |= copy_siginfo_to_user(&frame->info, info);
+
+    err |= __put_user(0, &frame->uc.tuc_flags);
+    err |= __put_user(0, &frame->uc.tuc_link);
+    err |= __put_user(set->sig[0], &frame->uc.tuc_osf_sigmask);
+    err |= __put_user(target_sigaltstack_used.ss_sp,
+                      &frame->uc.tuc_stack.ss_sp);
+    err |= __put_user(sas_ss_flags(env->ir[IR_SP]),
+                      &frame->uc.tuc_stack.ss_flags);
+    err |= __put_user(target_sigaltstack_used.ss_size,
+                      &frame->uc.tuc_stack.ss_size);
+    err |= setup_sigcontext(&frame->uc.tuc_mcontext, env, frame_addr, set);
+    for (i = 0; i < TARGET_NSIG_WORDS; ++i) {
+        err |= __put_user(set->sig[i], &frame->uc.tuc_sigmask.sig[i]);
+    }
+
+    if (ka->sa_restorer) {
+        r26 = ka->sa_restorer;
+    } else {
+        err |= __put_user(INSN_MOV_R30_R16, &frame->retcode[0]);
+        err |= __put_user(INSN_LDI_R0 + TARGET_NR_rt_sigreturn,
+                          &frame->retcode[1]);
+        err |= __put_user(INSN_CALLSYS, &frame->retcode[2]);
+        /* imb(); */
+        r26 = frame_addr;
+    }
+
+    if (err) {
+    give_sigsegv:
+       if (sig == TARGET_SIGSEGV) {
+            ka->_sa_handler = TARGET_SIG_DFL;
+        }
+        force_sig(TARGET_SIGSEGV);
+    }
+
+    env->ir[IR_RA] = r26;
+    env->ir[IR_PV] = env->pc = ka->_sa_handler;
+    env->ir[IR_A0] = sig;
+    env->ir[IR_A1] = frame_addr + offsetof(struct target_rt_sigframe, info);
+    env->ir[IR_A2] = frame_addr + offsetof(struct target_rt_sigframe, uc);
+    env->ir[IR_SP] = frame_addr;
+}
+
+long do_sigreturn(CPUState *env)
+{
+    struct target_sigcontext *sc;
+    abi_ulong sc_addr = env->ir[IR_A0];
+    target_sigset_t target_set;
+    sigset_t set;
+
+    if (!lock_user_struct(VERIFY_READ, sc, sc_addr, 1)) {
+        goto badframe;
+    }
+
+    target_sigemptyset(&target_set);
+    if (__get_user(target_set.sig[0], &sc->sc_mask)) {
+        goto badframe;
+    }
+
+    target_to_host_sigset_internal(&set, &target_set);
+    sigprocmask(SIG_SETMASK, &set, NULL);
+
+    if (restore_sigcontext(env, sc)) {
+        goto badframe;
+    }
+    unlock_user_struct(sc, sc_addr, 0);
+    return env->ir[IR_V0];
+
+ badframe:
+    unlock_user_struct(sc, sc_addr, 0);
+    force_sig(TARGET_SIGSEGV);
+}
+
+long do_rt_sigreturn(CPUState *env)
+{
+    abi_ulong frame_addr = env->ir[IR_A0];
+    struct target_rt_sigframe *frame;
+    sigset_t set;
+
+    if (!lock_user_struct(VERIFY_READ, frame, frame_addr, 1)) {
+        goto badframe;
+    }
+    target_to_host_sigset(&set, &frame->uc.tuc_sigmask);
+    sigprocmask(SIG_SETMASK, &set, NULL);
+
+    if (restore_sigcontext(env, &frame->uc.tuc_mcontext)) {
+        goto badframe;
+    }
+    if (do_sigaltstack(frame_addr + offsetof(struct target_rt_sigframe,
+                                             uc.tuc_stack),
+                       0, env->ir[IR_SP]) == -EFAULT) {
+        goto badframe;
+    }
+
+    unlock_user_struct(frame, frame_addr, 0);
+    return env->ir[IR_V0];
+
+
+ badframe:
+    unlock_user_struct(frame, frame_addr, 0);
+    force_sig(TARGET_SIGSEGV);
+}
+

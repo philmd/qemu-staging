@@ -11,7 +11,6 @@ typedef struct target_sigaltstack {
 	abi_ulong ss_size;
 } target_stack_t;
 
-
 /*
  * sigaltstack controls
  */

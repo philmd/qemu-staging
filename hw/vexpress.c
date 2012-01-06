@@ -69,6 +69,7 @@ enum {
     VE_ETHERNET,
     VE_USB,
     VE_DAPROM,
+    VE_VIRTIO1,
 };
 
 static target_phys_addr_t motherboard_legacy_map[] = {
@@ -90,6 +91,7 @@ static target_phys_addr_t motherboard_legacy_map[] = {
     [VE_SERIALDVI] = 0x10016000,
     [VE_RTC] = 0x10017000,
     [VE_COMPACTFLASH] = 0x1001a000,
+    [VE_VIRTIO1] = 0x1001e000,
     [VE_CLCD] = 0x1001f000,
     /* CS0: 0x40000000 .. 0x44000000 */
     [VE_NORFLASH0] = 0x40000000,
@@ -135,6 +137,7 @@ static target_phys_addr_t motherboard_aseries_map[] = {
     [VE_SERIALDVI] = 0x1c160000,
     [VE_RTC] = 0x1c170000,
     [VE_COMPACTFLASH] = 0x1c1a0000,
+    [VE_VIRTIO1] = 0x1c1e0000,
     [VE_CLCD] = 0x1c1f0000,
 };
 
@@ -404,6 +407,8 @@ static void vexpress_common_init(const VEDBoardInfo *daughterboard,
     /* VE_COMPACTFLASH: not modelled */
 
     sysbus_create_simple("pl111", map[VE_CLCD], pic[14]);
+
+    sysbus_create_simple("virtio-blk-mmio", map[VE_VIRTIO1], pic[42]);
 
     /* VE_NORFLASH0: not modelled */
     /* VE_NORFLASH0ALIAS: not modelled */

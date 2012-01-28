@@ -6,6 +6,7 @@
 #include "hw/loader.h"
 #endif
 #include "sysemu.h"
+#include "cpu-qom.h"
 
 static uint32_t cortexa15_cp15_c0_c1[8] = {
     0x00001131, 0x00011011, 0x02010555, 0x00000000,
@@ -45,8 +46,6 @@ static uint32_t arm1176_cp15_c0_c1[8] =
 
 static uint32_t arm1176_cp15_c0_c2[8] =
 { 0x0140011, 0x12002111, 0x11231121, 0x01102131, 0x01141, 0, 0, 0 };
-
-static uint32_t cpu_arm_find_by_name(const char *name);
 
 static inline void set_feature(CPUARMState *env, int feature)
 {
@@ -400,13 +399,21 @@ static int vfp_gdb_set_reg(CPUARMState *env, uint8_t *buf, int reg)
 
 CPUARMState *cpu_arm_init(const char *cpu_model)
 {
+    ObjectClass *klass;
+    ARMCPUClass *cpu_class;
     CPUARMState *env;
-    uint32_t id;
     static int inited = 0;
 
-    id = cpu_arm_find_by_name(cpu_model);
-    if (id == 0)
+    /* One legacy alias to check */
+    if (strcmp(cpu_model, "pxa270") == 0) {
+        cpu_model = "pxa270-a0";
+    }
+
+    klass = object_class_by_name(cpu_model);
+    if (klass == NULL) {
         return NULL;
+    }
+    cpu_class = ARM_CPU_CLASS(klass);
     env = g_malloc0(sizeof(CPUARMState));
     cpu_exec_init(env);
     if (tcg_enabled() && !inited) {
@@ -415,7 +422,7 @@ CPUARMState *cpu_arm_init(const char *cpu_model)
     }
 
     env->cpu_model_str = cpu_model;
-    env->cp15.c0_cpuid = id;
+    env->cp15.c0_cpuid = cpu_class->cp15.c0_cpuid;
     cpu_state_reset(env);
     if (arm_feature(env, ARM_FEATURE_NEON)) {
         gdb_register_coprocessor(env, vfp_gdb_get_reg, vfp_gdb_set_reg,
@@ -431,66 +438,51 @@ CPUARMState *cpu_arm_init(const char *cpu_model)
     return env;
 }
 
-struct arm_cpu_t {
-    uint32_t id;
-    const char *name;
-};
+typedef struct ARMCPUListState {
+    fprintf_function cpu_fprintf;
+    FILE *file;
+} ARMCPUListState;
 
-static const struct arm_cpu_t arm_cpu_names[] = {
-    { ARM_CPUID_ARM926, "arm926"},
-    { ARM_CPUID_ARM946, "arm946"},
-    { ARM_CPUID_ARM1026, "arm1026"},
-    { ARM_CPUID_ARM1136, "arm1136"},
-    { ARM_CPUID_ARM1136_R2, "arm1136-r2"},
-    { ARM_CPUID_ARM1176, "arm1176"},
-    { ARM_CPUID_ARM11MPCORE, "arm11mpcore"},
-    { ARM_CPUID_CORTEXM3, "cortex-m3"},
-    { ARM_CPUID_CORTEXA8, "cortex-a8"},
-    { ARM_CPUID_CORTEXA9, "cortex-a9"},
-    { ARM_CPUID_CORTEXA15, "cortex-a15" },
-    { ARM_CPUID_TI925T, "ti925t" },
-    { ARM_CPUID_PXA250, "pxa250" },
-    { ARM_CPUID_SA1100,    "sa1100" },
-    { ARM_CPUID_SA1110,    "sa1110" },
-    { ARM_CPUID_PXA255, "pxa255" },
-    { ARM_CPUID_PXA260, "pxa260" },
-    { ARM_CPUID_PXA261, "pxa261" },
-    { ARM_CPUID_PXA262, "pxa262" },
-    { ARM_CPUID_PXA270, "pxa270" },
-    { ARM_CPUID_PXA270_A0, "pxa270-a0" },
-    { ARM_CPUID_PXA270_A1, "pxa270-a1" },
-    { ARM_CPUID_PXA270_B0, "pxa270-b0" },
-    { ARM_CPUID_PXA270_B1, "pxa270-b1" },
-    { ARM_CPUID_PXA270_C0, "pxa270-c0" },
-    { ARM_CPUID_PXA270_C5, "pxa270-c5" },
-    { ARM_CPUID_ANY, "any"},
-    { 0, NULL}
-};
-
-void arm_cpu_list(FILE *f, fprintf_function cpu_fprintf)
+/* Sort alphabetically by type name, except for "any". */
+static gint arm_cpu_list_compare(gconstpointer a, gconstpointer b)
 {
-    int i;
+    ObjectClass *class_a = (ObjectClass *)a;
+    ObjectClass *class_b = (ObjectClass *)b;
+    const char *name_a, *name_b;
 
-    (*cpu_fprintf)(f, "Available CPUs:\n");
-    for (i = 0; arm_cpu_names[i].name; i++) {
-        (*cpu_fprintf)(f, "  %s\n", arm_cpu_names[i].name);
+    name_a = object_class_get_name(class_a);
+    name_b = object_class_get_name(class_b);
+    if (strcmp(name_a, "any") == 0) {
+        return 1;
+    } else if (strcmp(name_b, "any") == 0) {
+        return -1;
+    } else {
+        return strcmp(name_a, name_b);
     }
 }
 
-/* return 0 if not found */
-static uint32_t cpu_arm_find_by_name(const char *name)
+static void arm_cpu_list_entry(gpointer data, gpointer user_data)
 {
-    int i;
-    uint32_t id;
+    ObjectClass *klass = data;
+    ARMCPUListState *s = user_data;
 
-    id = 0;
-    for (i = 0; arm_cpu_names[i].name; i++) {
-        if (strcmp(name, arm_cpu_names[i].name) == 0) {
-            id = arm_cpu_names[i].id;
-            break;
-        }
-    }
-    return id;
+    (*s->cpu_fprintf)(s->file, "  %s\n",
+                      object_class_get_name(klass));
+}
+
+void arm_cpu_list(FILE *f, fprintf_function cpu_fprintf)
+{
+    ARMCPUListState s = {
+        .file = f,
+        .cpu_fprintf = cpu_fprintf,
+    };
+    GSList *list;
+
+    list = object_class_get_list(TYPE_ARM_CPU, false);
+    list = g_slist_sort(list, arm_cpu_list_compare);
+    (*cpu_fprintf)(f, "Available CPUs:\n");
+    g_slist_foreach(list, arm_cpu_list_entry, &s);
+    g_slist_free(list);
 }
 
 void cpu_arm_close(CPUARMState *env)

@@ -420,7 +420,6 @@ void cpu_arm_set_cp_io(CPUARMState *env, int cpnum,
 #define ARM_CPUID_PXA260      0x69052903
 #define ARM_CPUID_PXA261      0x69052d05
 #define ARM_CPUID_PXA262      0x69052d06
-#define ARM_CPUID_PXA270      0x69054110
 #define ARM_CPUID_PXA270_A0   0x69054110
 #define ARM_CPUID_PXA270_A1   0x69054111
 #define ARM_CPUID_PXA270_B0   0x69054112

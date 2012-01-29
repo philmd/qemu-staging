@@ -21,6 +21,7 @@
 #define QEMU_ARM_CPU_QOM_H
 
 #include "qemu/cpu.h"
+#include "cpu.h"
 
 #define TYPE_ARM_CPU "arm-cpu"
 
@@ -51,6 +52,7 @@ typedef struct ARMCPUClass {
 
 /**
  * ARMCPU:
+ * @env: Legacy CPU state.
  *
  * An ARM CPU core.
  */
@@ -58,7 +60,17 @@ typedef struct ARMCPU {
     /*< private >*/
     CPUState parent_obj;
     /*< public >*/
+
+    /* TODO Inline this and split off common state */
+    CPUARMState env;
 } ARMCPU;
+
+static inline ARMCPU *arm_env_get_cpu(CPUARMState *env)
+{
+    return ARM_CPU(container_of(env, ARMCPU, env));
+}
+
+#define ENV_GET_CPU(e) CPU(arm_env_get_cpu(e))
 
 
 #endif

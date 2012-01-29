@@ -2,9 +2,6 @@
 #include "gdbstub.h"
 #include "helper.h"
 #include "host-utils.h"
-#if !defined(CONFIG_USER_ONLY)
-#include "hw/loader.h"
-#endif
 #include "sysemu.h"
 #include "cpu-qom.h"
 
@@ -54,7 +51,6 @@ static inline void set_feature(CPUARMState *env, int feature)
 
 static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
 {
-    env->cp15.c0_cpuid = id;
     switch (id) {
     case ARM_CPUID_ARM926:
         set_feature(env, ARM_FEATURE_V5);
@@ -280,69 +276,12 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
 void cpu_state_reset(CPUARMState *env)
 {
     uint32_t id;
-    uint32_t tmp = 0;
 
-    if (qemu_loglevel_mask(CPU_LOG_RESET)) {
-        qemu_log("CPU Reset (CPU %d)\n", env->cpu_index);
-        log_cpu_state(env, 0);
-    }
+    cpu_reset(ENV_GET_CPU(env));
 
     id = env->cp15.c0_cpuid;
-    tmp = env->cp15.c15_config_base_address;
-    memset(env, 0, offsetof(CPUARMState, breakpoints));
     if (id)
         cpu_reset_model_id(env, id);
-    env->cp15.c15_config_base_address = tmp;
-#if defined (CONFIG_USER_ONLY)
-    env->uncached_cpsr = ARM_CPU_MODE_USR;
-    /* For user mode we must enable access to coprocessors */
-    env->vfp.xregs[ARM_VFP_FPEXC] = 1 << 30;
-    if (arm_feature(env, ARM_FEATURE_IWMMXT)) {
-        env->cp15.c15_cpar = 3;
-    } else if (arm_feature(env, ARM_FEATURE_XSCALE)) {
-        env->cp15.c15_cpar = 1;
-    }
-#else
-    /* SVC mode with interrupts disabled.  */
-    env->uncached_cpsr = ARM_CPU_MODE_SVC | CPSR_A | CPSR_F | CPSR_I;
-    /* On ARMv7-M the CPSR_I is the value of the PRIMASK register, and is
-       clear at reset.  Initial SP and PC are loaded from ROM.  */
-    if (IS_M(env)) {
-        uint32_t pc;
-        uint8_t *rom;
-        env->uncached_cpsr &= ~CPSR_I;
-        rom = rom_ptr(0);
-        if (rom) {
-            /* We should really use ldl_phys here, in case the guest
-               modified flash and reset itself.  However images
-               loaded via -kernel have not been copied yet, so load the
-               values directly from there.  */
-            env->regs[13] = ldl_p(rom);
-            pc = ldl_p(rom + 4);
-            env->thumb = pc & 1;
-            env->regs[15] = pc & ~1;
-        }
-    }
-    env->vfp.xregs[ARM_VFP_FPEXC] = 0;
-    env->cp15.c2_base_mask = 0xffffc000u;
-    /* v7 performance monitor control register: same implementor
-     * field as main ID register, and we implement no event counters.
-     */
-    env->cp15.c9_pmcr = (id & 0xff000000);
-#endif
-    set_flush_to_zero(1, &env->vfp.standard_fp_status);
-    set_flush_inputs_to_zero(1, &env->vfp.standard_fp_status);
-    set_default_nan_mode(1, &env->vfp.standard_fp_status);
-    set_float_detect_tininess(float_tininess_before_rounding,
-                              &env->vfp.fp_status);
-    set_float_detect_tininess(float_tininess_before_rounding,
-                              &env->vfp.standard_fp_status);
-    tlb_flush(env, 1);
-    /* Reset is a state change for some CPUARMState fields which we
-     * bake assumptions about into translated code, so we need to
-     * tb_flush().
-     */
-    tb_flush(env);
 }
 
 static int vfp_gdb_get_reg(CPUARMState *env, uint8_t *buf, int reg)
@@ -400,7 +339,7 @@ static int vfp_gdb_set_reg(CPUARMState *env, uint8_t *buf, int reg)
 CPUARMState *cpu_arm_init(const char *cpu_model)
 {
     ObjectClass *klass;
-    ARMCPUClass *cpu_class;
+    ARMCPU *cpu;
     CPUARMState *env;
     static int inited = 0;
 
@@ -413,16 +352,14 @@ CPUARMState *cpu_arm_init(const char *cpu_model)
     if (klass == NULL) {
         return NULL;
     }
-    cpu_class = ARM_CPU_CLASS(klass);
-    env = g_malloc0(sizeof(CPUARMState));
-    cpu_exec_init(env);
+    cpu = ARM_CPU(object_new(cpu_model));
+    env = &cpu->env;
+
     if (tcg_enabled() && !inited) {
         inited = 1;
         arm_translate_init();
     }
 
-    env->cpu_model_str = cpu_model;
-    env->cp15.c0_cpuid = cpu_class->cp15.c0_cpuid;
     cpu_state_reset(env);
     if (arm_feature(env, ARM_FEATURE_NEON)) {
         gdb_register_coprocessor(env, vfp_gdb_get_reg, vfp_gdb_set_reg,
@@ -487,7 +424,7 @@ void arm_cpu_list(FILE *f, fprintf_function cpu_fprintf)
 
 void cpu_arm_close(CPUARMState *env)
 {
-    g_free(env);
+    object_delete(OBJECT(ENV_GET_CPU(env)));
 }
 
 static int bad_mode_switch(CPUARMState *env, int mode)

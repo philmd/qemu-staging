@@ -20,12 +20,81 @@
 
 #include "cpu-qom.h"
 #include "qemu-common.h"
+#if !defined(CONFIG_USER_ONLY)
+#include "hw/loader.h"
+#endif
 
 static void arm_cpu_reset(CPUState *c)
 {
     ARMCPUClass *klass = ARM_CPU_GET_CLASS(c);
+    ARMCPU *cpu = ARM_CPU(c);
+    CPUARMState *env = &cpu->env;
+    uint32_t id;
+    uint32_t tmp;
+
+    if (qemu_loglevel_mask(CPU_LOG_RESET)) {
+        qemu_log("CPU Reset (CPU %d)\n", env->cpu_index);
+        log_cpu_state(env, 0);
+    }
 
     klass->parent_reset(c);
+
+    id = env->cp15.c0_cpuid;
+    tmp = env->cp15.c15_config_base_address;
+    memset(env, 0, offsetof(CPUARMState, breakpoints));
+    env->cp15.c0_cpuid = id;
+    env->cp15.c15_config_base_address = tmp;
+
+#if defined(CONFIG_USER_ONLY)
+    env->uncached_cpsr = ARM_CPU_MODE_USR;
+    /* For user mode we must enable access to coprocessors */
+    env->vfp.xregs[ARM_VFP_FPEXC] = 1 << 30;
+    if (arm_feature(env, ARM_FEATURE_IWMMXT)) {
+        env->cp15.c15_cpar = 3;
+    } else if (arm_feature(env, ARM_FEATURE_XSCALE)) {
+        env->cp15.c15_cpar = 1;
+    }
+#else
+    /* SVC mode with interrupts disabled.  */
+    env->uncached_cpsr = ARM_CPU_MODE_SVC | CPSR_A | CPSR_F | CPSR_I;
+    /* On ARMv7-M the CPSR_I is the value of the PRIMASK register, and is
+       clear at reset.  Initial SP and PC are loaded from ROM.  */
+    if (IS_M(env)) {
+        uint32_t pc;
+        uint8_t *rom;
+        env->uncached_cpsr &= ~CPSR_I;
+        rom = rom_ptr(0);
+        if (rom) {
+            /* We should really use ldl_phys here, in case the guest
+               modified flash and reset itself.  However images
+               loaded via -kernel have not been copied yet, so load the
+               values directly from there.  */
+            env->regs[13] = ldl_p(rom);
+            pc = ldl_p(rom + 4);
+            env->thumb = pc & 1;
+            env->regs[15] = pc & ~1;
+        }
+    }
+    env->vfp.xregs[ARM_VFP_FPEXC] = 0;
+    env->cp15.c2_base_mask = 0xffffc000u;
+    /* v7 performance monitor control register: same implementor
+     * field as main ID register, and we implement no event counters.
+     */
+    env->cp15.c9_pmcr = (id & 0xff000000);
+#endif
+    set_flush_to_zero(1, &env->vfp.standard_fp_status);
+    set_flush_inputs_to_zero(1, &env->vfp.standard_fp_status);
+    set_default_nan_mode(1, &env->vfp.standard_fp_status);
+    set_float_detect_tininess(float_tininess_before_rounding,
+                              &env->vfp.fp_status);
+    set_float_detect_tininess(float_tininess_before_rounding,
+                              &env->vfp.standard_fp_status);
+    tlb_flush(env, 1);
+    /* Reset is a state change for some CPUState fields which we
+     * bake assumptions about into translated code, so we need to
+     * tb_flush().
+     */
+    tb_flush(env);
 }
 
 /* CPU models */
@@ -146,6 +215,18 @@ static const ARMCPUInfo arm_cpus[] = {
     },
 };
 
+static void arm_cpu_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    ARMCPUClass *cpu_class = ARM_CPU_GET_CLASS(obj);
+
+    memset(&cpu->env, 0, sizeof(CPUARMState));
+    cpu_exec_init(&cpu->env);
+
+    cpu->env.cpu_model_str = object_get_typename(obj);
+    cpu->env.cp15.c0_cpuid = cpu_class->cp15.c0_cpuid;
+}
+
 static void arm_cpu_class_init(ObjectClass *klass, void *data)
 {
     ARMCPUClass *k = ARM_CPU_CLASS(klass);
@@ -164,6 +245,7 @@ static void cpu_register(const ARMCPUInfo *info)
         .name = info->name,
         .parent = TYPE_ARM_CPU,
         .instance_size = sizeof(ARMCPU),
+        .instance_init = arm_cpu_initfn,
         .class_size = sizeof(ARMCPUClass),
         .class_init = arm_cpu_class_init,
         .class_data = (void *)info,

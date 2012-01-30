@@ -102,6 +102,7 @@ static void arm_cpu_reset(CPUState *c)
 typedef struct ARMCPUInfo {
     const char *name;
     uint32_t id;
+    void (*class_init)(ARMCPUClass *klass, const struct ARMCPUInfo *info);
 } ARMCPUInfo;
 
 static const ARMCPUInfo arm_cpus[] = {
@@ -237,6 +238,10 @@ static void arm_cpu_class_init(ObjectClass *klass, void *data)
     cpu_class->reset = arm_cpu_reset;
 
     k->cp15.c0_cpuid = info->id;
+
+    if (info->class_init != NULL) {
+        (*info->class_init)(k, info);
+    }
 }
 
 static void cpu_register(const ARMCPUInfo *info)

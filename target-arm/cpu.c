@@ -24,6 +24,34 @@
 #include "hw/loader.h"
 #endif
 
+static void cp_reg_reset(void *key, void *value, void *udata)
+{
+    /* Reset a single ARMCPRegInfo register */
+    ARMCPRegInfo *ri = value;
+    CPUARMState *env = udata;
+
+    if (ri->type & ARM_CP_SPECIAL) {
+        return;
+    }
+
+    /* A zero offset is never possible as it would be regs[0]
+     * so we use it to indicate that reset is being handled elsewhere.
+     * This is basically only used for fields in non-core coprocessors
+     * (like the pxa2xx ones).
+     */
+    if (!ri->fieldoffset) {
+        return;
+    }
+
+    if (ri->type & ARM_CP_64BIT) {
+        uint64_t *p = (uint64_t *)((char *)env + ri->fieldoffset);
+        *p = ri->resetvalue;
+    } else {
+        uint32_t *p = (uint32_t *)((char *)env + ri->fieldoffset);
+        *p = ri->resetvalue;
+    }
+}
+
 static void arm_cpu_reset(CPUState *c)
 {
     ARMCPUClass *klass = ARM_CPU_GET_CLASS(c);
@@ -42,6 +70,7 @@ static void arm_cpu_reset(CPUState *c)
     id = env->cp15.c0_cpuid;
     tmp = env->cp15.c15_config_base_address;
     memset(env, 0, offsetof(CPUARMState, breakpoints));
+    g_hash_table_foreach(env->cp_regs, cp_reg_reset, env);
     env->cp15.c0_cpuid = id;
     env->cp15.c15_config_base_address = tmp;
 
@@ -118,6 +147,9 @@ static void arm_cpu_initfn(Object *obj)
     cpu_exec_init(&cpu->env);
 
     cpu->env.cpu_model_str = object_get_typename(obj);
+
+    cpu->env.cp_regs = g_hash_table_new_full(g_int_hash, g_int_equal,
+                                             g_free, g_free);
 }
 
 static void arm_cpu_postconfig_init(ARMCPU *cpu)

@@ -209,6 +209,8 @@ static void arm926_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_V5);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_TEST_CLEAN);
     cpu->env.cp15.c0_cpuid = 0x41069265;
     cpu->reset_fpsid = 0x41011090;
     cpu->ctr = 0x1dd20d2;
@@ -221,6 +223,7 @@ static void arm946_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_V5);
     set_feature(&cpu->env, ARM_FEATURE_MPU);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x41059461;
     cpu->ctr = 0x0f004006;
     cpu->reset_sctlr = 0x00000078;
@@ -233,6 +236,8 @@ static void arm1026_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V5);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
     set_feature(&cpu->env, ARM_FEATURE_AUXCR);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_TEST_CLEAN);
     cpu->env.cp15.c0_cpuid = 0x4106a262;
     cpu->reset_fpsid = 0x410110a0;
     cpu->ctr = 0x1dd20d2;
@@ -245,6 +250,9 @@ static void arm1136_r2_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_V6);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_DIRTY_REG);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_BLOCK_OPS);
     cpu->env.cp15.c0_cpuid = 0x4107b362;
     cpu->reset_fpsid = 0x410120b4;
     cpu->mvfr0 = 0x11111111;
@@ -260,6 +268,9 @@ static void arm1136_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V6K);
     set_feature(&cpu->env, ARM_FEATURE_V6);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_DIRTY_REG);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_BLOCK_OPS);
     cpu->env.cp15.c0_cpuid = 0x4117b363;
     cpu->reset_fpsid = 0x410120b4;
     cpu->mvfr0 = 0x11111111;
@@ -275,6 +286,8 @@ static void arm1176_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V6K);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
     set_feature(&cpu->env, ARM_FEATURE_VAPA);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
+    set_feature(&cpu->env, ARM_FEATURE_CACHE_DIRTY_REG);
     cpu->env.cp15.c0_cpuid = 0x410fb767;
     cpu->reset_fpsid = 0x410120b5;
     cpu->mvfr0 = 0x11111111;
@@ -290,6 +303,7 @@ static void arm11mpcore_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V6K);
     set_feature(&cpu->env, ARM_FEATURE_VFP);
     set_feature(&cpu->env, ARM_FEATURE_VAPA);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x410fb022;
     cpu->reset_fpsid = 0x410120b4;
     cpu->mvfr0 = 0x11111111;
@@ -314,6 +328,7 @@ static void cortex_a8_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_VFP3);
     set_feature(&cpu->env, ARM_FEATURE_NEON);
     set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x410fc080;
     cpu->reset_fpsid = 0x410330c0;
     cpu->mvfr0 = 0x11110222;
@@ -356,6 +371,7 @@ static void cortex_a15_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_ARM_DIV);
     set_feature(&cpu->env, ARM_FEATURE_V7MP);
     set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x412fc0f1;
     cpu->reset_fpsid = 0x410430f0;
     cpu->mvfr0 = 0x10110222;
@@ -380,6 +396,7 @@ static void sa1100_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x4401A11B;
     cpu->reset_sctlr = 0x00000070;
     arm_cpu_postconfig_init(cpu);
@@ -389,6 +406,7 @@ static void sa1110_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
+    set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     cpu->env.cp15.c0_cpuid = 0x6901B119;
     cpu->reset_sctlr = 0x00000070;
     arm_cpu_postconfig_init(cpu);

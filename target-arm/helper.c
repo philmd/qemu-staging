@@ -502,6 +502,14 @@ static const ARMCPRegInfo v6k_cp_reginfo[] = {
     REGINFO_SENTINEL
 };
 
+static const ARMCPRegInfo generic_timer_cp_reginfo[] = {
+    /* Dummy implementation: RAZ/WI the whole crn=14 space */
+    { .name = "GENERIC_TIMER", .cp = 15, .crn = 14,
+      .crm = CP_ANY, .opc1 = CP_ANY, .opc2 = CP_ANY,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    REGINFO_SENTINEL
+};
+
 void register_cp_regs_for_features(ARMCPU *cpu)
 {
     /* Register all the coprocessor registers based on feature bits */
@@ -527,6 +535,9 @@ void register_cp_regs_for_features(ARMCPU *cpu)
     }
     if (arm_feature(env, ARM_FEATURE_THUMB2EE)) {
         define_arm_cp_regs(env, t2ee_cp_reginfo);
+    }
+    if (arm_feature(env, ARM_FEATURE_GENERIC_TIMER)) {
+        define_arm_cp_regs(env, generic_timer_cp_reginfo);
     }
 }
 
@@ -1864,12 +1875,6 @@ void HELPER(set_cp15)(CPUARMState *env, uint32_t insn, uint32_t val)
             goto bad_reg;
         }
         break;
-    case 14: /* Generic timer */
-        if (arm_feature(env, ARM_FEATURE_GENERIC_TIMER)) {
-            /* Dummy implementation: RAZ/WI for all */
-            break;
-        }
-        goto bad_reg;
     case 15: /* Implementation specific.  */
         if (arm_feature(env, ARM_FEATURE_XSCALE)) {
             if (op2 == 0 && crm == 1) {
@@ -2209,12 +2214,6 @@ uint32_t HELPER(get_cp15)(CPUARMState *env, uint32_t insn)
         default:
             goto bad_reg;
         }
-    case 14: /* Generic timer */
-        if (arm_feature(env, ARM_FEATURE_GENERIC_TIMER)) {
-            /* Dummy implementation: RAZ/WI for all */
-            return 0;
-        }
-        goto bad_reg;
     case 15: /* Implementation specific.  */
         if (arm_feature(env, ARM_FEATURE_XSCALE)) {
             if (op2 == 0 && crm == 1)

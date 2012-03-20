@@ -285,6 +285,67 @@ void cpu_arm_close(CPUARMState *env)
     object_delete(OBJECT(ENV_GET_CPU(env)));
 }
 
+void define_arm_cp_regs_with_opaque(CPUARMState *env,
+                                    const ARMCPRegInfo *regs, void *opaque)
+{
+    /* Define implementations of coprocessor registers.
+     * We store these in a hashtable because typically
+     * there are less than 150 registers in a space which
+     * is 16*16*16*8*8 = 262144 in size.
+     * Wildcarding is supported for the crm, opc1 and opc2 fields.
+     * If a register is defined twice then the second definition is
+     * used, so this can be used to define some generic registers and
+     * then override them with implementation specific variations.
+     */
+    const ARMCPRegInfo *r;
+    for (r = regs; r->type != ARM_CP_SENTINEL; r++) {
+        int crm, opc1, opc2;
+        int crmmin = (r->crm == CP_ANY) ? 0 : r->crm;
+        int crmmax = (r->crm == CP_ANY) ? 15 : r->crm;
+        int opc1min = (r->opc1 == CP_ANY) ? 0 : r->opc1;
+        int opc1max = (r->opc1 == CP_ANY) ? 7 : r->opc1;
+        int opc2min = (r->opc2 == CP_ANY) ? 0 : r->opc2;
+        int opc2max = (r->opc2 == CP_ANY) ? 7 : r->opc2;
+        for (crm = crmmin; crm <= crmmax; crm++) {
+            for (opc1 = opc1min; opc1 <= opc1max; opc1++) {
+                for (opc2 = opc2min; opc2 <= opc2max; opc2++) {
+                    uint32_t *key = g_new(uint32_t, 1);
+                    ARMCPRegInfo *r2 = g_memdup(r, sizeof(ARMCPRegInfo));
+                    int is64 = (r->type & ARM_CP_64BIT) ? 1 : 0;
+                    *key = ENCODE_CP_REG(r->cp, is64, r->crn, crm, opc1, opc2);
+                    r2->opaque = opaque;
+                    /* Make sure reginfo passed to helpers for wildcarded regs
+                     * has the correct crm/opc1/opc2 for this reg, not CP_ANY:
+                     */
+                    r2->crm = crm;
+                    r2->opc1 = opc1;
+                    r2->opc2 = opc2;
+                    g_hash_table_insert(env->cp_regs, key, r2);
+                }
+            }
+        }
+    }
+}
+
+const ARMCPRegInfo *get_arm_cp_reginfo(CPUARMState *env, uint32_t encoded_cp)
+{
+    return g_hash_table_lookup(env->cp_regs, &encoded_cp);
+}
+
+int arm_cp_write_ignore(CPUARMState *env, const ARMCPRegInfo *ri,
+                        uint64_t value)
+{
+    /* Helper coprocessor write function for write-ignore registers */
+    return 0;
+}
+
+int arm_cp_read_zero(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t *value)
+{
+    /* Helper coprocessor write function for read-as-zero registers */
+    *value = 0;
+    return 0;
+}
+
 static int bad_mode_switch(CPUARMState *env, int mode)
 {
     /* Return true if it is not valid for us to switch to

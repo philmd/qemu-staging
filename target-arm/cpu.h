@@ -225,6 +225,9 @@ typedef struct CPUARMState {
     /* Internal CPU feature flags.  */
     uint32_t features;
 
+    /* Coprocessor information */
+    GHashTable *cp_regs;
+
     /* Coprocessor IO used by peripherals */
     struct {
         ARMReadCPFunc *cp_read;
@@ -400,6 +403,157 @@ void armv7m_nvic_complete_irq(void *opaque, int irq);
 void cpu_arm_set_cp_io(CPUARMState *env, int cpnum,
                        ARMReadCPFunc *cp_read, ARMWriteCPFunc *cp_write,
                        void *opaque);
+
+/* Interface for defining coprocessor registers.
+ * Registers are defined in tables of arm_cp_reginfo structs
+ * which are passed to define_arm_cp_regs().
+ */
+
+/* When looking up a coprocessor register we look for it
+ * via an integer which encodes all of:
+ *  coprocessor number
+ *  Crn, Crm, opc1, opc2 fields
+ *  32 or 64 bit register (ie is it accessed via MRC/MCR
+ *    or via MRRC/MCRR?)
+ * We allow 4 bits for opc1 because MRRC/MCRR have a 4 bit field.
+ * (In this case opc2 should be zero.)
+ */
+#define ENCODE_CP_REG(cp, is64, crn, crm, opc1, opc2)      \
+    (((cp) << 16) | ((is64) << 15) | ((crn) << 11) | \
+     ((crm) << 7) | ((opc1) << 3) | (opc2))
+
+#define DECODE_CPREG_CRN(enc) (((enc) >> 7) & 0xf)
+
+/* ARMCPRegInfo type field bits. If the SPECIAL bit is
+ * set this is a special-behaviour cp reg and bits [15..8]
+ * indicate what behaviour it has. Otherwise it is a simple
+ * cp reg, where CONST indicates that TCG can assume the value to
+ * be constant (ie load at translate time) and 64BIT indicates
+ * a 64 bit wide coprocessor register.
+ */
+#define ARM_CP_SPECIAL 1
+#define ARM_CP_CONST 2
+#define ARM_CP_64BIT 4
+#define ARM_CP_NOP (ARM_CP_SPECIAL | (1 << 8))
+#define ARM_CP_WFI (ARM_CP_SPECIAL | (2 << 8))
+/* Used only as a terminator for ARMCPRegInfo lists */
+#define ARM_CP_SENTINEL 0xffff
+
+/* Access rights:
+ * We define bits for Read and Write access for what rev C of the v7-AR ARM ARM
+ * defines as PL0 (user), PL1 (fiq/irq/svc/abt/und/sys, ie privileged), and
+ * PL2 (hyp). The other level which has Read and Write bits is Secure PL1
+ * (ie any of the privileged modes in Secure state, or Monitor mode).
+ * If a register is accessible in one privilege level it's always accessible
+ * in higher privilege levels too. Since "Secure PL1" also follows this rule
+ * (ie anything visible in PL2 is visible in S-PL1, some things are only
+ * visible in S-PL1) but "Secure PL1" is a bit of a mouthful, we bend the
+ * terminology a little and call this PL3.
+ *
+ * If access permissions for a register are more complex than can be
+ * described with these bits, then use a laxer set of restrictions, and
+ * do the more restrictive/complex check inside a helper function.
+ */
+#define PL3_R 0x80
+#define PL3_W 0x40
+#define PL2_R (0x20 | PL3_R)
+#define PL2_W (0x10 | PL3_W)
+#define PL1_R (0x08 | PL2_R)
+#define PL1_W (0x04 | PL2_W)
+#define PL0_R (0x02 | PL1_R)
+#define PL0_W (0x01 | PL1_W)
+
+#define PL3_RW (PL3_R | PL3_W)
+#define PL2_RW (PL2_R | PL2_W)
+#define PL1_RW (PL1_R | PL1_W)
+#define PL0_RW (PL0_R | PL0_W)
+
+static inline int arm_current_pl(CPUARMState *env)
+{
+    if ((env->uncached_cpsr & 0x1f) == ARM_CPU_MODE_USR) {
+        return 0;
+    }
+    /* We don't currently implement the Virtualization or TrustZone
+     * extensions, so PL2 and PL3 don't exist for us.
+     */
+    return 1;
+}
+
+/* Check that encoded cp and type agree about 64bitness of register */
+static inline int encoded_cp_matches_type(uint32_t encoded_cp, int type)
+{
+    if (type & ARM_CP_SPECIAL) {
+        return 1;
+    }
+    if (encoded_cp & (1 << 15)) {
+        return (type & ARM_CP_64BIT) ? 1 : 0;
+    } else {
+        return (type & ARM_CP_64BIT) ? 0 : 1;
+    }
+}
+
+typedef struct ARMCPRegInfo ARMCPRegInfo;
+
+/* Access functions for coprocessor registers. These should return
+ * 0 on success, or one of the EXCP_* constants if access should cause
+ * an exception.
+ * (In the latter case *value need not be written by a read accessor.)
+ * We pass uint64_t* here so we can have one kind of access function for
+ * both HELPER and HELPER64.
+ * If the ARMCPRegInfo readfn or writefn are left as NULL then the
+ * register can be simply read or written via fieldoffset.
+ */
+typedef int CPReadFn(CPUARMState *env, const ARMCPRegInfo *opaque,
+                       uint64_t *value);
+typedef int CPWriteFn(CPUARMState *env, const ARMCPRegInfo *opaque,
+                        uint64_t value);
+
+/* An ARMCPRegInfo can have crm, opc1 or opc2 set to CP_ANY to
+ * indicate a 'wildcard' field -- any value of that field in the
+ * MRC/MCR instruction will be decoded to this register. This is
+ * needed for older cores which underdecoded these fields, and also
+ * to continue to behave like older versions of QEMU.
+ */
+#define CP_ANY 0xff
+
+struct ARMCPRegInfo {
+    const char *name;
+    uint8_t cp;
+    uint8_t crn;
+    uint8_t crm;
+    uint8_t opc1;
+    uint8_t opc2;
+    int type;
+    int access;
+    void *opaque;
+    uint64_t resetvalue;
+    ptrdiff_t fieldoffset; /* offsetof(CPUARMState, field) */
+    CPReadFn *readfn;
+    CPWriteFn *writefn;
+};
+
+#define REGINFO_SENTINEL { .type = ARM_CP_SENTINEL }
+
+void define_arm_cp_regs_with_opaque(CPUARMState *env,
+                                    const ARMCPRegInfo *regs, void *opaque);
+static inline void define_arm_cp_regs(CPUARMState *env,
+                                      const ARMCPRegInfo *regs)
+{
+    define_arm_cp_regs_with_opaque(env, regs, 0);
+}
+const ARMCPRegInfo *get_arm_cp_reginfo(CPUARMState *env, uint32_t encoded_cp);
+
+/* CPWriteFn that can be used to implement writes-ignored behaviour */
+int arm_cp_write_ignore(CPUARMState *env, const ARMCPRegInfo *ri,
+                        uint64_t value);
+/* CPReadFn that can be used for read-as-zero behaviour */
+int arm_cp_read_zero(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t *value);
+
+static inline int cp_access_ok(CPUARMState *env,
+                               const ARMCPRegInfo *ri, int isread)
+{
+    return (ri->access >> ((arm_current_pl(env) * 2) + isread)) & 1;
+}
 
 /* Does the core conform to the the "MicroController" profile. e.g. Cortex-M3.
    Note the M in older cores (eg. ARM7TDMI) stands for Multiply. These are

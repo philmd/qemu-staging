@@ -464,6 +464,9 @@ static const ARMCPRegInfo cp_reginfo[] = {
       .opc1 = CP_ANY, .opc2 = 2, .access = PL1_W, .writefn = tlbiasid_write, },
     { .name = "TLBIMVAA", .cp = 15, .crn = 8, .crm = CP_ANY,
       .opc1 = CP_ANY, .opc2 = 3, .access = PL1_W, .writefn = tlbimvaa_write, },
+    /* Cache maintenance ops; some of this space may be overridden later. */
+    { .name = "CACHEMAINT", .cp = 15, .crn = 7, .crm = CP_ANY,
+      .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W, .type = ARM_CP_NOP },
     REGINFO_SENTINEL
 };
 
@@ -801,6 +804,17 @@ static int omap_wfi_write(CPUARMState *env, const ARMCPRegInfo *ri,
     return 0;
 }
 
+static int omap_cachemaint_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                                 uint64_t value)
+{
+    /* On OMAP there are registers indicating the max/min index of dcache lines
+     * containing a dirty line; cache flush operations have to reset these.
+     */
+    env->cp15.c15_i_max = 0x000;
+    env->cp15.c15_i_min = 0xff0;
+    return 0;
+}
+
 static const ARMCPRegInfo omap_cp_reginfo[] = {
     { .name = "DFSR", .cp = 15, .crn = 5, .crm = CP_ANY,
       .opc1 = CP_ANY, .opc2 = CP_ANY, .access = PL1_RW,
@@ -829,6 +843,9 @@ static const ARMCPRegInfo omap_cp_reginfo[] = {
      * base address at $rn & ~0xfff and map size of 0x200 << ($rn & 0xfff),
      * when MMU is off.
      */
+    { .name = "OMAP_CACHEMAINT", .cp = 15, .crn = 7, .crm = CP_ANY,
+      .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W,
+      .writefn = omap_cachemaint_write },
     REGINFO_SENTINEL
 };
 
@@ -901,6 +918,31 @@ static const ARMCPRegInfo dummy_c15_cp_reginfo[] = {
     REGINFO_SENTINEL
 };
 
+static const ARMCPRegInfo cache_dirty_status_cp_reginfo[] = {
+    /* Cache status: RAZ because we have no cache so it's always clean */
+    { .name = "CDSR", .cp = 15, .crn = 7, .crm = 10, .opc1 = 0, .opc2 = 6,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    REGINFO_SENTINEL
+};
+
+static const ARMCPRegInfo cache_block_xfer_status_cp_reginfo[] = {
+    /* We never have a a block transfer operation in progress */
+    { .name = "BXSR", .cp = 15, .crn = 7, .crm = 12, .opc1 = 0, .opc2 = 4,
+      .access = PL0_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    REGINFO_SENTINEL
+};
+
+static const ARMCPRegInfo cache_test_clean_cp_reginfo[] = {
+    /* The cache test-and-clean instructions always return (1 << 30)
+     * to indicate that there are no dirty cache lines.
+     */
+    { .name = "TC_DCACHE", .cp = 15, .crn = 7, .crm = 10, .opc1 = 0, .opc2 = 3,
+      .access = PL0_R, .type = ARM_CP_CONST, .resetvalue = (1 << 30) },
+    { .name = "TCI_DCACHE", .cp = 15, .crn = 7, .crm = 14, .opc1 = 0, .opc2 = 3,
+      .access = PL0_R, .type = ARM_CP_CONST, .resetvalue = (1 << 30) },
+    REGINFO_SENTINEL
+};
+
 void register_cp_regs_for_features(ARMCPU *cpu)
 {
     /* Register all the coprocessor registers based on feature bits */
@@ -945,6 +987,15 @@ void register_cp_regs_for_features(ARMCPU *cpu)
     }
     if (arm_feature(env, ARM_FEATURE_VAPA)) {
         define_arm_cp_regs(env, vapa_cp_reginfo);
+    }
+    if (arm_feature(env, ARM_FEATURE_CACHE_TEST_CLEAN)) {
+        define_arm_cp_regs(env, cache_test_clean_cp_reginfo);
+    }
+    if (arm_feature(env, ARM_FEATURE_CACHE_DIRTY_REG)) {
+        define_arm_cp_regs(env, cache_dirty_status_cp_reginfo);
+    }
+    if (arm_feature(env, ARM_FEATURE_CACHE_BLOCK_OPS)) {
+        define_arm_cp_regs(env, cache_block_xfer_status_cp_reginfo);
     }
     if (arm_feature(env, ARM_FEATURE_OMAPCP)) {
         define_arm_cp_regs(env, omap_cp_reginfo);
@@ -2082,13 +2133,6 @@ void HELPER(set_cp15)(CPUARMState *env, uint32_t insn, uint32_t val)
             }
         }
         break;
-    case 7: /* Cache control.  */
-        env->cp15.c15_i_max = 0x000;
-        env->cp15.c15_i_min = 0xff0;
-        if (op1 != 0) {
-            goto bad_reg;
-        }
-        break;
     case 9:
         if (arm_feature(env, ARM_FEATURE_OMAPCP))
             break;
@@ -2294,10 +2338,6 @@ uint32_t HELPER(get_cp15)(CPUARMState *env, uint32_t insn)
 		goto bad_reg;
 	    }
         }
-    case 7: /* Cache control.  */
-        /* FIXME: Should only clear Z flag if destination is r15.  */
-        env->ZF = 0;
-        return 0;
     case 9:
         switch (crm) {
         case 0: /* Cache lockdown */

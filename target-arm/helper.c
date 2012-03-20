@@ -415,6 +415,15 @@ static int tlbimvaa_write(CPUARMState *env, const ARMCPRegInfo *ri,
     return 0;
 }
 
+static int sctlr_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value)
+{
+    env->cp15.c1_sys = value;
+    /* ??? Lots of these bits are not implemented.  */
+    /* This may enable/disable the MMU, so do a TLB flush.  */
+    tlb_flush(env, 1);
+    return 0;
+}
+
 static const ARMCPRegInfo cp_reginfo[] = {
     /* DBGDIDR: just RAZ. In particular this means the "debug architecture
      * version" bits will read as a reserved value, which should cause
@@ -455,6 +464,13 @@ static const ARMCPRegInfo cp_reginfo[] = {
     REGINFO_SENTINEL
 };
 
+static ARMCPRegInfo sctlr_cp_reginfo[] = {
+    { .name = "SCTLR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 0,
+      .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c1_sys),
+      .writefn = sctlr_write },
+    REGINFO_SENTINEL
+};
+
 static const ARMCPRegInfo not_v6_cp_reginfo[] = {
     /* Not all pre-v6 cores implemented this WFI, so this is slightly
      * over-broad.
@@ -483,6 +499,16 @@ static const ARMCPRegInfo not_v7_cp_reginfo[] = {
     REGINFO_SENTINEL
 };
 
+static int cpacr_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value)
+{
+    if (env->cp15.c1_coproc != value) {
+        env->cp15.c1_coproc = value;
+        /* ??? Is this safe when called from within a TB?  */
+        tb_flush(env);
+    }
+    return 0;
+}
+
 static const ARMCPRegInfo v6_cp_reginfo[] = {
     /* prefetch by MVA in v6, NOP in v7 */
     { .name = "MVA_prefetch",
@@ -502,6 +528,9 @@ static const ARMCPRegInfo v6_cp_reginfo[] = {
      */
     { .name = "WFAR", .cp = 15, .crn = 6, .crm = 0, .opc1 = 0, .opc2 = 1,
       .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0, },
+    { .name = "CPACR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 2,
+      .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c1_coproc),
+      .resetvalue = 0, .writefn = cpacr_write },
     REGINFO_SENTINEL
 };
 
@@ -575,6 +604,9 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pminten),
       .resetvalue = 0,
       .writefn = pmintenclr_write },
+    { .name = "SCR", .cp = 15, .crn = 1, .crm = 1, .opc1 = 0, .opc2 = 0,
+      .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c1_scr),
+      .resetvalue = 0, },
     REGINFO_SENTINEL
 };
 
@@ -782,6 +814,26 @@ static const ARMCPRegInfo arm1026_cp_reginfo[] = {
     { .name = "IFAR", .cp = 15, .crn = 6, .crm = 0, .opc1 = 0, .opc2 = 1,
       .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c6_insn),
       .resetvalue = 0, },
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 1, },
+    REGINFO_SENTINEL
+};
+
+static const ARMCPRegInfo arm1136_cp_reginfo[] = {
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 7, },
+    REGINFO_SENTINEL
+};
+
+static const ARMCPRegInfo arm1176_cp_reginfo[] = {
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 7, },
+    REGINFO_SENTINEL
+};
+
+static const ARMCPRegInfo arm11mpcore_cp_reginfo[] = {
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 1, },
     REGINFO_SENTINEL
 };
 
@@ -907,6 +959,10 @@ static const ARMCPRegInfo xscale_cp_reginfo[] = {
       .cp = 15, .crn = 15, .crm = 1, .opc1 = 0, .opc2 = 0, .access = PL1_RW,
       .fieldoffset = offsetof(CPUARMState, cp15.c15_cpar), .resetvalue = 0,
       .writefn = xscale_cpar_write, },
+    { .name = "XSCALE_AUXCR",
+      .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1, .access = PL1_RW,
+      .fieldoffset = offsetof(CPUARMState, cp15.c1_xscaleauxcr),
+      .resetvalue = 0, },
     REGINFO_SENTINEL
 };
 
@@ -944,6 +1000,8 @@ static const ARMCPRegInfo cortexa9_cp_reginfo[] = {
       .access = PL1_RW, .resetvalue = 0, .type = ARM_CP_CONST },
     { .name = "TLB_ATTR", .cp = 15, .crn = 15, .crm = 7, .opc1 = 5, .opc2 = 2,
       .access = PL1_RW, .resetvalue = 0, .type = ARM_CP_CONST },
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0, },
     REGINFO_SENTINEL
 };
 
@@ -952,6 +1010,8 @@ static const ARMCPRegInfo cortexa8_cp_reginfo[] = {
       .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
     { .name = "L2AUXCR", .cp = 15, .crn = 9, .crm = 0, .opc1 = 1, .opc2 = 2,
       .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 2, },
     REGINFO_SENTINEL
 };
 
@@ -971,6 +1031,8 @@ static const ARMCPRegInfo cortexa15_cp_reginfo[] = {
       .writefn = arm_cp_write_ignore, },
     { .name = "L2ECTLR", .cp = 15, .crn = 9, .crm = 0, .opc1 = 1, .opc2 = 3,
       .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "AUXCR", .cp = 15, .crn = 1, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0, },
     REGINFO_SENTINEL
 };
 
@@ -1086,10 +1148,24 @@ void register_cp_regs_for_features(ARMCPU *cpu)
         define_arm_cp_regs(env, dummy_c15_cp_reginfo);
     }
 
+    /* Generic registers whose values depend on the implementation */
+    sctlr_cp_reginfo[0].resetvalue = cpu->reset_sctlr;
+    define_arm_cp_regs(env, sctlr_cp_reginfo);
+
     /* Some cp15 registers are truly implementation specific */
     switch (ARM_CPUID(env)) {
     case ARM_CPUID_ARM1026:
         define_arm_cp_regs(env, arm1026_cp_reginfo);
+        break;
+    case ARM_CPUID_ARM1136:
+    case ARM_CPUID_ARM1136_R2:
+        define_arm_cp_regs(env, arm1136_cp_reginfo);
+        break;
+    case ARM_CPUID_ARM1176:
+        define_arm_cp_regs(env, arm1176_cp_reginfo);
+        break;
+    case ARM_CPUID_ARM11MPCORE:
+        define_arm_cp_regs(env, arm11mpcore_cp_reginfo);
         break;
     case ARM_CPUID_CORTEXA8:
         define_arm_cp_regs(env, cortexa8_cp_reginfo);
@@ -2162,42 +2238,6 @@ void HELPER(set_cp15)(CPUARMState *env, uint32_t insn, uint32_t val)
             break;
         }
         goto bad_reg;
-    case 1: /* System configuration.  */
-        if (arm_feature(env, ARM_FEATURE_V7)
-                && op1 == 0 && crm == 1 && op2 == 0) {
-            env->cp15.c1_scr = val;
-            break;
-        }
-        if (arm_feature(env, ARM_FEATURE_OMAPCP))
-            op2 = 0;
-        switch (op2) {
-        case 0:
-            if (!arm_feature(env, ARM_FEATURE_XSCALE) || crm == 0)
-                env->cp15.c1_sys = val;
-            /* ??? Lots of these bits are not implemented.  */
-            /* This may enable/disable the MMU, so do a TLB flush.  */
-            tlb_flush(env, 1);
-            break;
-        case 1: /* Auxiliary control register.  */
-            if (arm_feature(env, ARM_FEATURE_XSCALE)) {
-                env->cp15.c1_xscaleauxcr = val;
-                break;
-            }
-            /* Not implemented.  */
-            break;
-        case 2:
-            if (arm_feature(env, ARM_FEATURE_XSCALE))
-                goto bad_reg;
-            if (env->cp15.c1_coproc != val) {
-                env->cp15.c1_coproc = val;
-                /* ??? Is this safe when called from within a TB?  */
-                tb_flush(env);
-            }
-            break;
-        default:
-            goto bad_reg;
-        }
-        break;
     case 4: /* Reserved.  */
         goto bad_reg;
     case 12: /* Reserved.  */
@@ -2295,45 +2335,6 @@ uint32_t HELPER(get_cp15)(CPUARMState *env, uint32_t insn)
             if (op2 != 0 || crm != 0)
                 goto bad_reg;
             return env->cp15.c0_cssel;
-        default:
-            goto bad_reg;
-        }
-    case 1: /* System configuration.  */
-        if (arm_feature(env, ARM_FEATURE_V7)
-            && op1 == 0 && crm == 1 && op2 == 0) {
-            return env->cp15.c1_scr;
-        }
-        if (arm_feature(env, ARM_FEATURE_OMAPCP))
-            op2 = 0;
-        switch (op2) {
-        case 0: /* Control register.  */
-            return env->cp15.c1_sys;
-        case 1: /* Auxiliary control register.  */
-            if (arm_feature(env, ARM_FEATURE_XSCALE))
-                return env->cp15.c1_xscaleauxcr;
-            if (!arm_feature(env, ARM_FEATURE_AUXCR))
-                goto bad_reg;
-            switch (ARM_CPUID(env)) {
-            case ARM_CPUID_ARM1026:
-                return 1;
-            case ARM_CPUID_ARM1136:
-            case ARM_CPUID_ARM1136_R2:
-            case ARM_CPUID_ARM1176:
-                return 7;
-            case ARM_CPUID_ARM11MPCORE:
-                return 1;
-            case ARM_CPUID_CORTEXA8:
-                return 2;
-            case ARM_CPUID_CORTEXA9:
-            case ARM_CPUID_CORTEXA15:
-                return 0;
-            default:
-                goto bad_reg;
-            }
-        case 2: /* Coprocessor access register.  */
-            if (arm_feature(env, ARM_FEATURE_XSCALE))
-                goto bad_reg;
-            return env->cp15.c1_coproc;
         default:
             goto bad_reg;
         }

@@ -97,151 +97,219 @@ static void arm_cpu_reset(CPUState *c)
     tb_flush(env);
 }
 
-/* CPU models */
-
-typedef struct ARMCPUInfo {
-    const char *name;
-    uint32_t id;
-    void (*class_init)(ARMCPUClass *klass, const struct ARMCPUInfo *info);
-} ARMCPUInfo;
-
-static const ARMCPUInfo arm_cpus[] = {
-    {
-        .name = "arm926",
-        .id = 0x41069265,
-    },
-    {
-        .name = "arm946",
-        .id = 0x41059461,
-    },
-    {
-        .name = "arm1026",
-        .id = 0x4106a262,
-    },
-    /* What QEMU calls "arm1136-r2" is actually the 1136 r0p2, i.e. an
-     * older core than plain "arm1136". In particular this does not
-     * have the v6K features.
-     */
-    {
-        .name = "arm1136-r2",
-        .id = 0x4107b362,
-    },
-    {
-        .name = "arm1136",
-        .id = 0x4117b363,
-    },
-    {
-        .name = "arm1176",
-        .id = 0x410fb767,
-    },
-    {
-        .name = "arm11mpcore",
-        .id = 0x410fb022,
-    },
-    {
-        .name = "cortex-m3",
-        .id = 0x410fc231,
-    },
-    {
-        .name = "cortex-a8",
-        .id = 0x410fc080,
-    },
-    {
-        .name = "cortex-a9",
-        .id = 0x410fc090,
-    },
-    {
-        .name = "cortex-a15",
-        .id = 0x412fc0f1,
-    },
-    {
-        .name = "ti925t",
-        .id = 0x54029252,
-    },
-    {
-        .name = "sa1100",
-        .id = 0x4401A11B,
-    },
-    {
-        .name = "sa1110",
-        .id = 0x6901B119,
-    },
-    {
-        .name = "pxa250",
-        .id = 0x69052100,
-    },
-    {
-        .name = "pxa255",
-        .id = 0x69052d00,
-    },
-    {
-        .name = "pxa260",
-        .id = 0x69052903,
-    },
-    {
-        .name = "pxa261",
-        .id = 0x69052d05,
-    },
-    {
-        .name = "pxa262",
-        .id = 0x69052d06,
-    },
-    {
-        .name = "pxa270-a0",
-        .id = 0x69054110,
-    },
-    {
-        .name = "pxa270-a1",
-        .id = 0x69054111,
-    },
-    {
-        .name = "pxa270-b0",
-        .id = 0x69054112,
-    },
-    {
-        .name = "pxa270-b1",
-        .id = 0x69054113,
-    },
-    {
-        .name = "pxa270-c0",
-        .id = 0x69054114,
-    },
-    {
-        .name = "pxa270-c5",
-        .id = 0x69054117,
-    },
-    {
-        .name = "any",
-        .id = 0xffffffff,
-    },
-};
-
 static void arm_cpu_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
-    ARMCPUClass *cpu_class = ARM_CPU_GET_CLASS(obj);
 
     memset(&cpu->env, 0, sizeof(CPUARMState));
     cpu_exec_init(&cpu->env);
 
     cpu->env.cpu_model_str = object_get_typename(obj);
-    cpu->env.cp15.c0_cpuid = cpu_class->cp15.c0_cpuid;
 }
+
+/* CPU models */
+
+static void arm926_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x41069265;
+}
+
+static void arm946_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x41059461;
+}
+
+static void arm1026_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x4106a262;
+}
+
+static void arm1136_r2_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x4107b362;
+}
+
+static void arm1136_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x4117b363;
+}
+
+static void arm1176_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x410fb767;
+}
+
+static void arm11mpcore_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x410fb022;
+}
+
+static void cortex_m3_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x410fc231;
+}
+
+static void cortex_a8_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x410fc080;
+}
+
+static void cortex_a9_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x410fc090;
+}
+
+static void cortex_a15_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x412fc0f1;
+}
+
+static void ti925t_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x41069265;
+}
+
+static void sa1100_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x4401A11B;
+}
+
+static void sa1110_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x6901B119;
+}
+
+static void pxa250_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69052100;
+}
+
+static void pxa255_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69052d00;
+}
+
+static void pxa260_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69052903;
+}
+
+static void pxa261_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69052d05;
+}
+
+static void pxa262_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69052d06;
+}
+
+static void pxa270a0_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054110;
+}
+
+static void pxa270a1_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054111;
+}
+
+static void pxa270b0_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054112;
+}
+
+static void pxa270b1_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054113;
+}
+
+static void pxa270c0_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054114;
+}
+
+static void pxa270c5_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0x69054117;
+}
+
+static void arm_any_initfn(Object *obj)
+{
+    ARMCPU *cpu = ARM_CPU(obj);
+    cpu->env.cp15.c0_cpuid = 0xffffffff;
+}
+
+typedef struct ARMCPUInfo {
+    const char *name;
+    uint32_t id;
+    void (*initfn)(Object *obj);
+} ARMCPUInfo;
+
+static const ARMCPUInfo arm_cpus[] = {
+    { .name = "arm926",      .initfn = arm926_initfn },
+    { .name = "arm946",      .initfn = arm946_initfn },
+    { .name = "arm1026",     .initfn = arm1026_initfn },
+    /* What QEMU calls "arm1136-r2" is actually the 1136 r0p2, i.e. an
+     * older core than plain "arm1136". In particular this does not
+     * have the v6K features.
+     */
+    { .name = "arm1136-r2",  .initfn = arm1136_r2_initfn },
+    { .name = "arm1136",     .initfn = arm1136_initfn },
+    { .name = "arm1176",     .initfn = arm1176_initfn },
+    { .name = "arm11mpcore", .initfn = arm11mpcore_initfn },
+    { .name = "cortex-m3",   .initfn = cortex_m3_initfn },
+    { .name = "cortex-a8",   .initfn = cortex_a8_initfn },
+    { .name = "cortex-a9",   .initfn = cortex_a9_initfn },
+    { .name = "cortex-a15",  .initfn = cortex_a15_initfn },
+    { .name = "ti925t",      .initfn = ti925t_initfn },
+    { .name = "sa1100",      .initfn = sa1100_initfn },
+    { .name = "sa1110",      .initfn = sa1110_initfn },
+    { .name = "pxa250",      .initfn = pxa250_initfn },
+    { .name = "pxa255",      .initfn = pxa255_initfn },
+    { .name = "pxa260",      .initfn = pxa260_initfn },
+    { .name = "pxa261",      .initfn = pxa261_initfn },
+    { .name = "pxa262",      .initfn = pxa262_initfn },
+    { .name = "pxa270-a0",   .initfn = pxa270a0_initfn },
+    { .name = "pxa270-a1",   .initfn = pxa270a1_initfn },
+    { .name = "pxa270-b0",   .initfn = pxa270b0_initfn },
+    { .name = "pxa270-b1",   .initfn = pxa270b1_initfn },
+    { .name = "pxa270-c0",   .initfn = pxa270c0_initfn },
+    { .name = "pxa270-c5",   .initfn = pxa270c5_initfn },
+    { .name = "any",         .initfn = arm_any_initfn },
+};
 
 static void arm_cpu_class_init(ObjectClass *klass, void *data)
 {
     ARMCPUClass *k = ARM_CPU_CLASS(klass);
     CPUClass *cpu_class = CPU_CLASS(klass);
-    const ARMCPUInfo *info = data;
-
     k->parent_reset = cpu_class->reset;
     cpu_class->reset = arm_cpu_reset;
-
-    k->cp15.c0_cpuid = info->id;
-
-    if (info->class_init != NULL) {
-        (*info->class_init)(k, info);
-    }
 }
 
 static void cpu_register(const ARMCPUInfo *info)
@@ -250,10 +318,9 @@ static void cpu_register(const ARMCPUInfo *info)
         .name = info->name,
         .parent = TYPE_ARM_CPU,
         .instance_size = sizeof(ARMCPU),
-        .instance_init = arm_cpu_initfn,
+        .instance_init = info->initfn,
         .class_size = sizeof(ARMCPUClass),
         .class_init = arm_cpu_class_init,
-        .class_data = (void *)info,
     };
 
     type_register_static(&type);
@@ -263,6 +330,7 @@ static TypeInfo arm_cpu_type_info = {
     .name = TYPE_ARM_CPU,
     .parent = TYPE_CPU,
     .instance_size = sizeof(ARMCPU),
+    .instance_init = arm_cpu_initfn,
     .abstract = true,
     .class_size = sizeof(ARMCPUClass),
 };

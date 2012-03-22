@@ -44,10 +44,6 @@ typedef struct ARMCPUClass {
     /*< public >*/
 
     void (*parent_reset)(CPUState *cpu);
-
-    struct {
-        uint32_t c0_cpuid;
-    } cp15;
 } ARMCPUClass;
 
 /**
@@ -63,6 +59,10 @@ typedef struct ARMCPU {
 
     /* TODO Inline this and split off common state */
     CPUARMState env;
+
+    /* Configuration values (set by the instance init function);
+     * some of these might become properties eventually.
+     */
 } ARMCPU;
 
 static inline ARMCPU *arm_env_get_cpu(CPUARMState *env)

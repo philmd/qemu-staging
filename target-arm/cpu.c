@@ -97,8 +97,16 @@ static void arm_cpu_reset(CPUState *c)
     tb_flush(env);
 }
 
+static inline void set_feature(CPUARMState *env, int feature)
+{
+    env->features |= 1u << feature;
+}
+
 static void arm_cpu_initfn(Object *obj)
 {
+    /* This function runs before the init functions for
+     * the CPU model specific subclasses
+     */
     ARMCPU *cpu = ARM_CPU(obj);
 
     memset(&cpu->env, 0, sizeof(CPUARMState));
@@ -107,162 +115,309 @@ static void arm_cpu_initfn(Object *obj)
     cpu->env.cpu_model_str = object_get_typename(obj);
 }
 
+static void arm_cpu_postconfig_init(ARMCPU *cpu)
+{
+    /* This function is called as the last thing the init
+     * functions for the CPU model specific subclasses do,
+     * so it can do common actions based on feature bits, etc.
+     */
+    CPUARMState *env = &cpu->env;
+    /* Some features automatically imply others: */
+    if (arm_feature(env, ARM_FEATURE_V7)) {
+        set_feature(env, ARM_FEATURE_VAPA);
+        set_feature(env, ARM_FEATURE_THUMB2);
+        if (!arm_feature(env, ARM_FEATURE_M)) {
+            set_feature(env, ARM_FEATURE_V6K);
+        } else {
+            set_feature(env, ARM_FEATURE_V6);
+        }
+    }
+    if (arm_feature(env, ARM_FEATURE_V6K)) {
+        set_feature(env, ARM_FEATURE_V6);
+    }
+    if (arm_feature(env, ARM_FEATURE_V6)) {
+        set_feature(env, ARM_FEATURE_V5);
+        if (!arm_feature(env, ARM_FEATURE_M)) {
+            set_feature(env, ARM_FEATURE_AUXCR);
+        }
+    }
+    if (arm_feature(env, ARM_FEATURE_V5)) {
+        set_feature(env, ARM_FEATURE_V4T);
+    }
+    if (arm_feature(env, ARM_FEATURE_M)) {
+        set_feature(env, ARM_FEATURE_THUMB_DIV);
+    }
+    if (arm_feature(env, ARM_FEATURE_ARM_DIV)) {
+        set_feature(env, ARM_FEATURE_THUMB_DIV);
+    }
+    if (arm_feature(env, ARM_FEATURE_VFP4)) {
+        set_feature(env, ARM_FEATURE_VFP3);
+    }
+    if (arm_feature(env, ARM_FEATURE_VFP3)) {
+        set_feature(env, ARM_FEATURE_VFP);
+    }
+}
+
 /* CPU models */
 
 static void arm926_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
     cpu->env.cp15.c0_cpuid = 0x41069265;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm946_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_MPU);
     cpu->env.cp15.c0_cpuid = 0x41059461;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm1026_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_AUXCR);
     cpu->env.cp15.c0_cpuid = 0x4106a262;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm1136_r2_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V6);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
     cpu->env.cp15.c0_cpuid = 0x4107b362;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm1136_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V6K);
+    set_feature(&cpu->env, ARM_FEATURE_V6);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
     cpu->env.cp15.c0_cpuid = 0x4117b363;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm1176_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V6K);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_VAPA);
     cpu->env.cp15.c0_cpuid = 0x410fb767;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm11mpcore_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V6K);
+    set_feature(&cpu->env, ARM_FEATURE_VFP);
+    set_feature(&cpu->env, ARM_FEATURE_VAPA);
     cpu->env.cp15.c0_cpuid = 0x410fb022;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void cortex_m3_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V7);
+    set_feature(&cpu->env, ARM_FEATURE_M);
     cpu->env.cp15.c0_cpuid = 0x410fc231;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void cortex_a8_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V7);
+    set_feature(&cpu->env, ARM_FEATURE_VFP3);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
     cpu->env.cp15.c0_cpuid = 0x410fc080;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void cortex_a9_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V7);
+    set_feature(&cpu->env, ARM_FEATURE_VFP3);
+    set_feature(&cpu->env, ARM_FEATURE_VFP_FP16);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
+    /* Note that A9 supports the MP extensions even for
+     * A9UP and single-core A9MP (which are both different
+     * and valid configurations; we don't model A9UP).
+     */
+    set_feature(&cpu->env, ARM_FEATURE_V7MP);
     cpu->env.cp15.c0_cpuid = 0x410fc090;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void cortex_a15_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V7);
+    set_feature(&cpu->env, ARM_FEATURE_VFP4);
+    set_feature(&cpu->env, ARM_FEATURE_VFP_FP16);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
+    set_feature(&cpu->env, ARM_FEATURE_ARM_DIV);
+    set_feature(&cpu->env, ARM_FEATURE_V7MP);
+    set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
     cpu->env.cp15.c0_cpuid = 0x412fc0f1;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void ti925t_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V4T);
+    set_feature(&cpu->env, ARM_FEATURE_OMAPCP);
     cpu->env.cp15.c0_cpuid = 0x41069265;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void sa1100_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
     cpu->env.cp15.c0_cpuid = 0x4401A11B;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void sa1110_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
     cpu->env.cp15.c0_cpuid = 0x6901B119;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa250_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052100;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa255_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d00;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa260_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052903;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa261_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d05;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa262_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d06;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270a0_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
+    set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054110;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270a1_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
+    set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054111;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270b0_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
+    set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054112;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270b1_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
+    set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054113;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270c0_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V5);
+    set_feature(&cpu->env, ARM_FEATURE_XSCALE);
+    set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054114;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void pxa270c5_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
+    set_feature(&cpu->env, ARM_FEATURE_V7);
+    set_feature(&cpu->env, ARM_FEATURE_VFP4);
+    set_feature(&cpu->env, ARM_FEATURE_VFP_FP16);
+    set_feature(&cpu->env, ARM_FEATURE_NEON);
+    set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
+    set_feature(&cpu->env, ARM_FEATURE_ARM_DIV);
+    set_feature(&cpu->env, ARM_FEATURE_V7MP);
     cpu->env.cp15.c0_cpuid = 0x69054117;
+    arm_cpu_postconfig_init(cpu);
 }
 
 static void arm_any_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
     cpu->env.cp15.c0_cpuid = 0xffffffff;
+    arm_cpu_postconfig_init(cpu);
 }
 
 typedef struct ARMCPUInfo {

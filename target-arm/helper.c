@@ -1160,6 +1160,14 @@ void register_cp_regs_for_features(ARMCPU *cpu)
     }
 
     /* Some cp15 registers are truly implementation specific */
+    /* TODO: instead of this we should be doing this in the
+     * implementation specific initfns in cpu.c.
+     * ISSUES: (a) can we just move the structs across or do
+     * any of them rely on functions declared static in this file?
+     * (b) check for overlaps with generic register defs, do we
+     * need to register them after the per-feature regs above or
+     * can we get away with doing the imp-def ones first?
+     */
     switch (ARM_CPUID(env)) {
     case ARM_CPUID_ARM1026:
         define_arm_cp_regs(env, arm1026_cp_reginfo);

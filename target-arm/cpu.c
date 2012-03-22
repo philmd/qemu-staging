@@ -67,6 +67,15 @@ static void arm_cpu_reset(CPUState *c)
 
     klass->parent_reset(c);
 
+    /* TODO: where we are doing things for cp15 reset here we should
+     * make sure it is handled via the cp infrastructure instead,
+     * and get rid of the code here.
+     * TODO: we should be able to get rid of these copy-values-across-memset
+     * hacks, either because the reset is handled in the cp15 infrastructure
+     * or (for env->features) by moving the field in CPUARMState to the back
+     * where it won't be trashed.
+     */
+
     id = env->cp15.c0_cpuid;
     tmp = env->cp15.c15_config_base_address;
     memset(env, 0, offsetof(CPUARMState, breakpoints));
@@ -199,6 +208,21 @@ static void arm_cpu_postconfig_init(ARMCPU *cpu)
 
 /* CPU models */
 
+/* TODO:
+ * these functions should set up the reset values for more registers,
+ * particularly the c0 ID registers which we have not yet converted.
+ * We should set here fields in ARMCPU. Then in register_cp_regs_for_features()
+ * we should define cp15 regs with the 'resetvalue' field set from those
+ * ARMCPU fields. That makes the env->cp15 fields redundant.
+ * TODO:
+ * c1_sys (aka the SCTLR) should have its reset value set up like this too.
+ * TODO:
+ * maybe we should handle the AUXCR that way too?
+ * TODO: FPSID, MVFR0, MVFR1 aren't cp15 registers but we should put their
+ * reset values in ARMCPU too, and reset from those in arm_cpu_reset.
+ *
+ * When all the above have been dealt with we can get rid of cpu_model_id_reset.
+ */
 static void arm926_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);

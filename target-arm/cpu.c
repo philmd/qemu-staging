@@ -193,6 +193,8 @@ static void arm_cpu_postconfig_init(ARMCPU *cpu)
     if (arm_feature(env, ARM_FEATURE_VFP3)) {
         set_feature(env, ARM_FEATURE_VFP);
     }
+
+    register_cp_regs_for_features(cpu);
 }
 
 /* CPU models */

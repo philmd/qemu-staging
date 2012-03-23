@@ -63,6 +63,7 @@ typedef struct ARMCPU {
     /* Configuration values (set by the instance init function);
      * some of these might become properties eventually.
      */
+    uint32_t reset_fpsid;
 } ARMCPU;
 
 static inline ARMCPU *arm_env_get_cpu(CPUARMState *env)

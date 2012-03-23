@@ -48,7 +48,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
 {
     switch (id) {
     case ARM_CPUID_ARM926:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x41011090;
         env->cp15.c0_cachetype = 0x1dd20d2;
         env->cp15.c1_sys = 0x00090078;
         break;
@@ -57,7 +56,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c1_sys = 0x00000078;
         break;
     case ARM_CPUID_ARM1026:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410110a0;
         env->cp15.c0_cachetype = 0x1dd20d2;
         env->cp15.c1_sys = 0x00090078;
         break;
@@ -72,7 +70,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
          * for 1136_r2 (in particular r0p2 does not actually implement most
          * of the ID registers).
          */
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410120b4;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x11111111;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x00000000;
         memcpy(env->cp15.c0_c1, arm1136_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -81,7 +78,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c1_sys = 0x00050078;
         break;
     case ARM_CPUID_ARM1176:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410120b5;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x11111111;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x00000000;
         memcpy(env->cp15.c0_c1, arm1176_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -90,7 +86,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c1_sys = 0x00050078;
         break;
     case ARM_CPUID_ARM11MPCORE:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410120b4;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x11111111;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x00000000;
         memcpy(env->cp15.c0_c1, mpcore_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -98,7 +93,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c0_cachetype = 0x1dd20d2;
         break;
     case ARM_CPUID_CORTEXA8:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410330c0;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x11110222;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x00011100;
         memcpy(env->cp15.c0_c1, cortexa8_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -111,7 +105,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c1_sys = 0x00c50078;
         break;
     case ARM_CPUID_CORTEXA9:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x41033090;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x11110222;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x01111111;
         memcpy(env->cp15.c0_c1, cortexa9_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -123,7 +116,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c1_sys = 0x00c50078;
         break;
     case ARM_CPUID_CORTEXA15:
-        env->vfp.xregs[ARM_VFP_FPSID] = 0x410430f0;
         env->vfp.xregs[ARM_VFP_MVFR0] = 0x10110222;
         env->vfp.xregs[ARM_VFP_MVFR1] = 0x11111111;
         memcpy(env->cp15.c0_c1, cortexa15_cp15_c0_c1, 8 * sizeof(uint32_t));

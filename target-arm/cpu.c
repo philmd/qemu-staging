@@ -49,6 +49,7 @@ static void arm_cpu_reset(CPUState *c)
     env->vfp.xregs[ARM_VFP_MVFR0] = cpu->mvfr0;
     env->vfp.xregs[ARM_VFP_MVFR1] = cpu->mvfr1;
     env->cp15.c0_cachetype = cpu->ctr;
+    env->cp15.c1_sys = cpu->reset_sctlr;
 
 #if defined(CONFIG_USER_ONLY)
     env->uncached_cpsr = ARM_CPU_MODE_USR;
@@ -173,6 +174,7 @@ static void arm926_initfn(Object *obj)
     cpu->env.cp15.c0_cpuid = 0x41069265;
     cpu->reset_fpsid = 0x41011090;
     cpu->ctr = 0x1dd20d2;
+    cpu->reset_sctlr = 0x00090078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -183,6 +185,7 @@ static void arm946_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_MPU);
     cpu->env.cp15.c0_cpuid = 0x41059461;
     cpu->ctr = 0x0f004006;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -195,6 +198,7 @@ static void arm1026_initfn(Object *obj)
     cpu->env.cp15.c0_cpuid = 0x4106a262;
     cpu->reset_fpsid = 0x410110a0;
     cpu->ctr = 0x1dd20d2;
+    cpu->reset_sctlr = 0x00090078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -208,6 +212,7 @@ static void arm1136_r2_initfn(Object *obj)
     cpu->mvfr0 = 0x11111111;
     cpu->mvfr1 = 0x00000000;
     cpu->ctr = 0x1dd20d2;
+    cpu->reset_sctlr = 0x00050078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -222,6 +227,7 @@ static void arm1136_initfn(Object *obj)
     cpu->mvfr0 = 0x11111111;
     cpu->mvfr1 = 0x00000000;
     cpu->ctr = 0x1dd20d2;
+    cpu->reset_sctlr = 0x00050078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -236,6 +242,7 @@ static void arm1176_initfn(Object *obj)
     cpu->mvfr0 = 0x11111111;
     cpu->mvfr1 = 0x00000000;
     cpu->ctr = 0x1dd20d2;
+    cpu->reset_sctlr = 0x00050078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -274,6 +281,7 @@ static void cortex_a8_initfn(Object *obj)
     cpu->mvfr0 = 0x11110222;
     cpu->mvfr1 = 0x00011100;
     cpu->ctr = 0x82048004;
+    cpu->reset_sctlr = 0x00c50078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -295,6 +303,7 @@ static void cortex_a9_initfn(Object *obj)
     cpu->mvfr0 = 0x11110222;
     cpu->mvfr1 = 0x01111111;
     cpu->ctr = 0x80038003;
+    cpu->reset_sctlr = 0x00c50078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -314,6 +323,7 @@ static void cortex_a15_initfn(Object *obj)
     cpu->mvfr0 = 0x10110222;
     cpu->mvfr1 = 0x11111111;
     cpu->ctr = 0x8444c004;
+    cpu->reset_sctlr = 0x00c50078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -324,6 +334,7 @@ static void ti925t_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_OMAPCP);
     cpu->env.cp15.c0_cpuid = 0x41069265;
     cpu->ctr = 0x5109149;
+    cpu->reset_sctlr = 0x00000070;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -332,6 +343,7 @@ static void sa1100_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
     cpu->env.cp15.c0_cpuid = 0x4401A11B;
+    cpu->reset_sctlr = 0x00000070;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -340,6 +352,7 @@ static void sa1110_initfn(Object *obj)
     ARMCPU *cpu = ARM_CPU(obj);
     set_feature(&cpu->env, ARM_FEATURE_STRONGARM);
     cpu->env.cp15.c0_cpuid = 0x6901B119;
+    cpu->reset_sctlr = 0x00000070;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -350,6 +363,7 @@ static void pxa250_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052100;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -360,6 +374,7 @@ static void pxa255_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d00;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -370,6 +385,7 @@ static void pxa260_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052903;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -380,6 +396,7 @@ static void pxa261_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d05;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -390,6 +407,7 @@ static void pxa262_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_XSCALE);
     cpu->env.cp15.c0_cpuid = 0x69052d06;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -401,6 +419,7 @@ static void pxa270a0_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054110;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -412,6 +431,7 @@ static void pxa270a1_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054111;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -423,6 +443,7 @@ static void pxa270b0_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054112;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -434,6 +455,7 @@ static void pxa270b1_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054113;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -445,6 +467,7 @@ static void pxa270c0_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_IWMMXT);
     cpu->env.cp15.c0_cpuid = 0x69054114;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -460,6 +483,7 @@ static void pxa270c5_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V7MP);
     cpu->env.cp15.c0_cpuid = 0x69054117;
     cpu->ctr = 0xd172172;
+    cpu->reset_sctlr = 0x00000078;
     arm_cpu_postconfig_init(cpu);
 }
 

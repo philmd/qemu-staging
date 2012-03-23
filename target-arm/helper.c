@@ -48,13 +48,10 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
 {
     switch (id) {
     case ARM_CPUID_ARM926:
-        env->cp15.c1_sys = 0x00090078;
         break;
     case ARM_CPUID_ARM946:
-        env->cp15.c1_sys = 0x00000078;
         break;
     case ARM_CPUID_ARM1026:
-        env->cp15.c1_sys = 0x00090078;
         break;
     case ARM_CPUID_ARM1136:
         /* This is the 1136 r1, which is a v6K core */
@@ -69,12 +66,10 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
          */
         memcpy(env->cp15.c0_c1, arm1136_cp15_c0_c1, 8 * sizeof(uint32_t));
         memcpy(env->cp15.c0_c2, arm1136_cp15_c0_c2, 8 * sizeof(uint32_t));
-        env->cp15.c1_sys = 0x00050078;
         break;
     case ARM_CPUID_ARM1176:
         memcpy(env->cp15.c0_c1, arm1176_cp15_c0_c1, 8 * sizeof(uint32_t));
         memcpy(env->cp15.c0_c2, arm1176_cp15_c0_c2, 8 * sizeof(uint32_t));
-        env->cp15.c1_sys = 0x00050078;
         break;
     case ARM_CPUID_ARM11MPCORE:
         memcpy(env->cp15.c0_c1, mpcore_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -87,7 +82,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c0_ccsid[0] = 0xe007e01a; /* 16k L1 dcache. */
         env->cp15.c0_ccsid[1] = 0x2007e01a; /* 16k L1 icache. */
         env->cp15.c0_ccsid[2] = 0xf0000000; /* No L2 icache. */
-        env->cp15.c1_sys = 0x00c50078;
         break;
     case ARM_CPUID_CORTEXA9:
         memcpy(env->cp15.c0_c1, cortexa9_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -95,7 +89,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c0_clid = (1 << 27) | (1 << 24) | 3;
         env->cp15.c0_ccsid[0] = 0xe00fe015; /* 16k L1 dcache. */
         env->cp15.c0_ccsid[1] = 0x200fe015; /* 16k L1 icache. */
-        env->cp15.c1_sys = 0x00c50078;
         break;
     case ARM_CPUID_CORTEXA15:
         memcpy(env->cp15.c0_c1, cortexa15_cp15_c0_c1, 8 * sizeof(uint32_t));
@@ -104,7 +97,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
         env->cp15.c0_ccsid[0] = 0x701fe00a; /* 32K L1 dcache */
         env->cp15.c0_ccsid[1] = 0x201fe00a; /* 32K L1 icache */
         env->cp15.c0_ccsid[2] = 0x711fe07a; /* 4096K L2 unified cache */
-        env->cp15.c1_sys = 0x00c50078;
         break;
     case ARM_CPUID_CORTEXM3:
         break;
@@ -113,7 +105,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
     case ARM_CPUID_TI915T:
     case ARM_CPUID_TI925T:
         env->cp15.c0_cpuid = ARM_CPUID_TI925T; /* Depends on wiring.  */
-        env->cp15.c1_sys = 0x00000070;
         env->cp15.c15_i_max = 0x000;
         env->cp15.c15_i_min = 0xff0;
         break;
@@ -123,7 +114,6 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
     case ARM_CPUID_PXA261:
     case ARM_CPUID_PXA262:
         /* JTAG_ID is ((id << 28) | 0x09265013) */
-        env->cp15.c1_sys = 0x00000078;
         break;
     case ARM_CPUID_PXA270_A0:
     case ARM_CPUID_PXA270_A1:
@@ -133,11 +123,9 @@ static void cpu_reset_model_id(CPUARMState *env, uint32_t id)
     case ARM_CPUID_PXA270_C5:
         /* JTAG_ID is ((id << 28) | 0x09265013) */
         env->iwmmxt.cregs[ARM_IWMMXT_wCID] = 0x69051000 | 'Q';
-        env->cp15.c1_sys = 0x00000078;
         break;
     case ARM_CPUID_SA1100:
     case ARM_CPUID_SA1110:
-        env->cp15.c1_sys = 0x00000070;
         break;
     default:
         cpu_abort(env, "Bad CPU ID: %x\n", id);

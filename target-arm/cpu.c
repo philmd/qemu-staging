@@ -51,6 +51,10 @@ static void arm_cpu_reset(CPUState *c)
     env->cp15.c0_cachetype = cpu->ctr;
     env->cp15.c1_sys = cpu->reset_sctlr;
 
+    if (arm_feature(env, ARM_FEATURE_IWMMXT)) {
+        env->iwmmxt.cregs[ARM_IWMMXT_wCID] = 0x69051000 | 'Q';
+    }
+
 #if defined(CONFIG_USER_ONLY)
     env->uncached_cpsr = ARM_CPU_MODE_USR;
     /* For user mode we must enable access to coprocessors */

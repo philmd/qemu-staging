@@ -46,6 +46,8 @@ static void arm_cpu_reset(CPUState *c)
     env->cp15.c15_config_base_address = tmp;
 
     env->vfp.xregs[ARM_VFP_FPSID] = cpu->reset_fpsid;
+    env->vfp.xregs[ARM_VFP_MVFR0] = cpu->mvfr0;
+    env->vfp.xregs[ARM_VFP_MVFR1] = cpu->mvfr1;
 
 #if defined(CONFIG_USER_ONLY)
     env->uncached_cpsr = ARM_CPU_MODE_USR;
@@ -199,6 +201,8 @@ static void arm1136_r2_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_VFP);
     cpu->env.cp15.c0_cpuid = 0x4107b362;
     cpu->reset_fpsid = 0x410120b4;
+    cpu->mvfr0 = 0x11111111;
+    cpu->mvfr1 = 0x00000000;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -210,6 +214,8 @@ static void arm1136_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_VFP);
     cpu->env.cp15.c0_cpuid = 0x4117b363;
     cpu->reset_fpsid = 0x410120b4;
+    cpu->mvfr0 = 0x11111111;
+    cpu->mvfr1 = 0x00000000;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -221,6 +227,8 @@ static void arm1176_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_VAPA);
     cpu->env.cp15.c0_cpuid = 0x410fb767;
     cpu->reset_fpsid = 0x410120b5;
+    cpu->mvfr0 = 0x11111111;
+    cpu->mvfr1 = 0x00000000;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -232,6 +240,8 @@ static void arm11mpcore_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_VAPA);
     cpu->env.cp15.c0_cpuid = 0x410fb022;
     cpu->reset_fpsid = 0x410120b4;
+    cpu->mvfr0 = 0x11111111;
+    cpu->mvfr1 = 0x00000000;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -253,6 +263,8 @@ static void cortex_a8_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
     cpu->env.cp15.c0_cpuid = 0x410fc080;
     cpu->reset_fpsid = 0x410330c0;
+    cpu->mvfr0 = 0x11110222;
+    cpu->mvfr1 = 0x00011100;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -271,6 +283,8 @@ static void cortex_a9_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_V7MP);
     cpu->env.cp15.c0_cpuid = 0x410fc090;
     cpu->reset_fpsid = 0x41033090;
+    cpu->mvfr0 = 0x11110222;
+    cpu->mvfr1 = 0x01111111;
     arm_cpu_postconfig_init(cpu);
 }
 
@@ -287,6 +301,8 @@ static void cortex_a15_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
     cpu->env.cp15.c0_cpuid = 0x412fc0f1;
     cpu->reset_fpsid = 0x410430f0;
+    cpu->mvfr0 = 0x10110222;
+    cpu->mvfr1 = 0x11111111;
     arm_cpu_postconfig_init(cpu);
 }
 

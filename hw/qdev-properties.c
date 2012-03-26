@@ -54,7 +54,7 @@ static void set_bit(Object *obj, Visitor *v, void *opaque,
     bool value;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -98,7 +98,7 @@ static void set_int8(Object *obj, Visitor *v, void *opaque,
     int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -184,7 +184,7 @@ static void set_int16(Object *obj, Visitor *v, void *opaque,
     int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -234,7 +234,7 @@ static void set_int32(Object *obj, Visitor *v, void *opaque,
     int64_t value;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -324,7 +324,7 @@ static void set_int64(Object *obj, Visitor *v, void *opaque,
     int64_t *ptr = qdev_get_prop_ptr(dev, prop);
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -412,7 +412,7 @@ static void set_string(Object *obj, Visitor *v, void *opaque,
     char *str;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -490,7 +490,7 @@ static void set_pointer(Object *obj, Visitor *v, Property *prop,
     int ret;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -659,7 +659,7 @@ static void set_vlan(Object *obj, Visitor *v, void *opaque,
     VLANState *vlan;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -729,7 +729,7 @@ static void set_mac(Object *obj, Visitor *v, void *opaque,
     char *str, *p;
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -797,7 +797,7 @@ static void set_enum(Object *obj, Visitor *v, void *opaque,
     int *ptr = qdev_get_prop_ptr(dev, prop);
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 
@@ -828,7 +828,7 @@ static void set_pci_devfn(Object *obj, Visitor *v, void *opaque,
     char *str = (char *)"";
 
     if (dev->state != DEV_STATE_CREATED) {
-        error_set(errp, QERR_PERMISSION_DENIED);
+        error_set(errp, QERR_PROPERTY_SET_AFTER_REALIZE, dev->id?:"", name);
         return;
     }
 

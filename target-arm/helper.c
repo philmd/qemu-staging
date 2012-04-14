@@ -82,6 +82,49 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
     REGINFO_SENTINEL
 };
 
+static int teecr_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                       uint64_t value)
+{
+    value &= 1;
+    env->teecr = value;
+    return 0;
+}
+
+static int teehbr_read(CPUARMState *env, const ARMCPRegInfo *ri,
+                       uint64_t *value)
+{
+    /* This is a helper function because the user access rights
+     * depend on the value of the TEECR.
+     */
+    if (arm_current_pl(env) == 0 && (env->teecr & 1)) {
+        return EXCP_UDEF;
+    }
+    *value = env->teehbr;
+    return 0;
+}
+
+static int teehbr_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                        uint64_t value)
+{
+    if (arm_current_pl(env) == 0 && (env->teecr & 1)) {
+        return EXCP_UDEF;
+    }
+    env->teehbr = value;
+    return 0;
+}
+
+static const ARMCPRegInfo t2ee_cp_reginfo[] = {
+    { .name = "TEECR", .cp = 14, .crn = 0, .crm = 0, .opc1 = 6, .opc2 = 0,
+      .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, teecr),
+      .resetvalue = 0,
+      .writefn = teecr_write },
+    { .name = "TEEHBR", .cp = 14, .crn = 1, .crm = 0, .opc1 = 6, .opc2 = 0,
+      .access = PL0_RW, .fieldoffset = offsetof(CPUARMState, teehbr),
+      .resetvalue = 0,
+      .readfn = teehbr_read, .writefn = teehbr_write },
+    REGINFO_SENTINEL
+};
+
 void register_cp_regs_for_features(ARMCPU *cpu)
 {
     /* Register all the coprocessor registers based on feature bits */
@@ -94,6 +137,9 @@ void register_cp_regs_for_features(ARMCPU *cpu)
     define_arm_cp_regs(env, cp_reginfo);
     if (arm_feature(env, ARM_FEATURE_V7)) {
         define_arm_cp_regs(env, v7_cp_reginfo);
+    }
+    if (arm_feature(env, ARM_FEATURE_THUMB2EE)) {
+        define_arm_cp_regs(env, t2ee_cp_reginfo);
     }
 }
 
@@ -2937,13 +2983,4 @@ float64 VFP_HELPER(muladd, d)(float64 a, float64 b, float64 c, void *fpstp)
 {
     float_status *fpst = fpstp;
     return float64_muladd(a, b, c, 0, fpst);
-}
-
-void HELPER(set_teecr)(CPUARMState *env, uint32_t val)
-{
-    val &= 1;
-    if (env->teecr != val) {
-        env->teecr = val;
-        tb_flush(env);
-    }
 }

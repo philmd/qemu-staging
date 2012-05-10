@@ -65,6 +65,7 @@ static inline M68kCPU *m68k_env_get_cpu(CPUM68KState *env)
 }
 
 #define ENV_GET_CPU(e) CPU(m68k_env_get_cpu(e))
+#define CPU_GET_ENV(c) (&M68K_CPU(c)->env)
 
 
 #endif

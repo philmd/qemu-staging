@@ -102,6 +102,7 @@ static inline ARMCPU *arm_env_get_cpu(CPUARMState *env)
 }
 
 #define ENV_GET_CPU(e) CPU(arm_env_get_cpu(e))
+#define CPU_GET_ENV(c) (&ARM_CPU(c)->env)
 
 void arm_cpu_realize(ARMCPU *cpu);
 

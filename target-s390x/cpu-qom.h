@@ -66,6 +66,7 @@ static inline S390CPU *s390_env_get_cpu(CPUS390XState *env)
 }
 
 #define ENV_GET_CPU(e) CPU(s390_env_get_cpu(e))
+#define CPU_GET_ENV(c) (&S390_CPU(c)->env)
 
 
 #endif

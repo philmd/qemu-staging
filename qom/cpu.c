@@ -30,6 +30,12 @@ void cpu_reset(CPUState *cpu)
     }
 }
 
+CPUState *cpu_copy(CPUState *cpu)
+{
+    CPUClass *klass = CPU_GET_CLASS(cpu);
+    return (*klass->copy)(cpu);
+}
+
 static void cpu_common_reset(CPUState *cpu)
 {
 }
@@ -39,6 +45,7 @@ static void cpu_class_init(ObjectClass *klass, void *data)
     CPUClass *k = CPU_CLASS(klass);
 
     k->reset = cpu_common_reset;
+    k->copy = cpu_default_copy;
 }
 
 static TypeInfo cpu_type_info = {

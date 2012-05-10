@@ -4260,7 +4260,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         ts = g_malloc0(sizeof(TaskState));
         init_task_state(ts);
         /* we create a new CPU instance. */
-        new_env = cpu_copy(env);
+        new_env = CPU_GET_ENV(cpu_copy(ENV_GET_CPU(env)));
 #if defined(TARGET_I386) || defined(TARGET_SPARC) || defined(TARGET_PPC)
         cpu_state_reset(new_env);
 #endif

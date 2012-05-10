@@ -1876,8 +1876,13 @@ void cpu_abort(CPUArchState *env, const char *fmt, ...)
     abort();
 }
 
-CPUArchState *cpu_copy(CPUArchState *env)
+/* Note that this function is suitable for use as the CPUClass copy
+ * callback if your CPUArchState has no members which are unsuitable
+ * for simple shallow copy via memcpy().
+ */
+CPUState *cpu_default_copy(CPUState *oldcpu)
 {
+    CPUArchState *env = CPU_GET_ENV(oldcpu);
     CPUArchState *new_env = cpu_init(env->cpu_model_str);
     CPUArchState *next_cpu = new_env->next_cpu;
     int cpu_index = new_env->cpu_index;
@@ -1907,7 +1912,7 @@ CPUArchState *cpu_copy(CPUArchState *env)
     }
 #endif
 
-    return new_env;
+    return ENV_GET_CPU(new_env);
 }
 
 #if !defined(CONFIG_USER_ONLY)

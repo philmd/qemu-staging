@@ -75,6 +75,7 @@ static inline XtensaCPU *xtensa_env_get_cpu(const CPUXtensaState *env)
 }
 
 #define ENV_GET_CPU(e) CPU(xtensa_env_get_cpu(e))
+#define CPU_GET_ENV(c) (&XTENSA_CPU(c)->env)
 
 
 #endif

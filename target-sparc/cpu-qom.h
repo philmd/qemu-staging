@@ -70,6 +70,7 @@ static inline SPARCCPU *sparc_env_get_cpu(CPUSPARCState *env)
 }
 
 #define ENV_GET_CPU(e) CPU(sparc_env_get_cpu(e))
+#define CPU_GET_ENV(c) (&SPARC_CPU(c)->env)
 
 
 #endif

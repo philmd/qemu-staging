@@ -40,6 +40,7 @@ typedef struct CPUState CPUState;
 /**
  * CPUClass:
  * @reset: Callback to reset the #CPUState to its initial state.
+ * @copy: Callback to create a new #CPUState as a copy of this one.
  *
  * Represents a CPU family or model.
  */
@@ -49,6 +50,7 @@ typedef struct CPUClass {
     /*< public >*/
 
     void (*reset)(CPUState *cpu);
+    CPUState *(*copy)(CPUState *cpu);
 } CPUClass;
 
 /**
@@ -71,5 +73,19 @@ struct CPUState {
  */
 void cpu_reset(CPUState *cpu);
 
+/**
+ * cpu_copy:
+ * @cpu: The CPU whose state is to be copied to create a new CPU state.
+ */
+CPUState *cpu_copy(CPUState *cpu);
+
+/**
+ * cpu_default_copy:
+ * An implementation of the cpu_copy method suitable for
+ * use if the CPUClass subclass:
+ *  (a) provides CPU_GET_ENV/ENV_GET_CPU macros in its cpu.h
+ *  (b) has only members which can be safely shallow copied.
+ */
+CPUState *cpu_default_copy(CPUState *oldcpu);
 
 #endif

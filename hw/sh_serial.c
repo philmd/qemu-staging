@@ -186,7 +186,7 @@ static void sh_serial_write(void *opaque, target_phys_addr_t offs,
         }
     }
 
-    fprintf(stderr, "sh_serial: unsupported write to 0x%02x\n", offs);
+    fprintf(stderr, "sh_serial: unsupported write to 0x%02" PRIxPLX "\n", offs);
     abort();
 }
 
@@ -287,7 +287,8 @@ static uint64_t sh_serial_read(void *opaque, target_phys_addr_t offs,
 #endif
 
     if (ret & ~((1 << 16) - 1)) {
-        fprintf(stderr, "sh_serial: unsupported read from 0x%02x\n", offs);
+        fprintf(stderr,
+                "sh_serial: unsupported read from 0x%02" PRIxPLX "\n", offs);
         abort();
     }
 

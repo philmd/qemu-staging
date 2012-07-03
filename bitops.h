@@ -269,4 +269,70 @@ static inline unsigned long hweight_long(unsigned long w)
     return count;
 }
 
+/**
+ * extract32 - return a specified bit field from a uint32_t value
+ * @value: The value to extract the bit field from
+ * @start: The lowest bit in the bit field (numbered from 0)
+ * @length: The length of the bit field
+ *
+ * Returns the value of the bit field extracted from the input value.
+ */
+static inline uint32_t extract32(uint32_t value, int start, int length)
+{
+    assert(start >= 0 && length > 0 && length <= 32 - start);
+    return (value >> start) & (~0U >> (32 - length));
+}
+
+/**
+ * extract64 - return a specified bit field from a uint64_t value
+ * @value: The value to extract the bit field from
+ * @start: The lowest bit in the bit field (numbered from 0)
+ * @length: The length of the bit field
+ *
+ * Returns the value of the bit field extracted from the input value.
+ */
+static inline uint64_t extract64(uint64_t value, int start, int length)
+{
+    assert(start >= 0 && length > 0 && length <= 64 - start);
+    return (value >> start) & (~0ULL >> (64 - length));
+}
+
+/**
+ * deposit32 - Insert into a specified bit field in a uint32_t
+ * @value: Initial value to insert bit field into
+ * @start: The lowest bit in the bit field (numbered from 0)
+ * @length: The length of the bit field
+ * @fieldval: The value to insert into the bit field
+ *
+ * Returns the input value with the fieldval inserted
+ * into it at the specified location.
+ */
+static inline uint32_t deposit32(uint32_t value, int start, int length,
+                                 uint32_t fieldval)
+{
+    uint32_t mask;
+    assert(start >= 0 && length > 0 && length <= 32 - start);
+    mask = (~0U >> (32 - length)) << start;
+    return (value & ~mask) | ((fieldval << start) & mask);
+}
+
+/**
+ * deposit64 - Insert into a specified bit field in a uint64_t
+ * @value: Initial value to insert bit field into
+ * @start: The lowest bit in the bit field (numbered from 0)
+ * @length: The length of the bit field
+ * @fieldval: The value to insert into the bit field
+ *
+ * Returns the input value with the fieldval inserted
+ * into it at the specified location.
+ */
+static inline uint64_t deposit64(uint64_t value, int start, int length,
+                                 uint64_t fieldval)
+{
+    uint64_t mask;
+    assert(start >= 0 && length > 0 && length <= 64 - start);
+    mask = (~0ULL >> (64 - length)) << start;
+    return (value & ~mask) | ((fieldval << start) & mask);
+}
+
 #endif

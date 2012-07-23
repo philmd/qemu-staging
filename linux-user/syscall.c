@@ -1363,9 +1363,11 @@ static inline abi_long host_to_target_cmsg(struct target_msghdr *target_msgh,
             struct timeval *tv = (struct timeval *)data;
             struct target_timeval *target_tv =
                                         (struct target_timeval *)target_data;
+            printf("qemu: copying host to target timeval: %lx %lx\n",
+                   tv->tv_sec, tv->tv_usec);
 
-            tv->tv_sec = tswapl(target_tv->tv_sec);
-            tv->tv_usec = tswapl(target_tv->tv_usec);
+            target_tv->tv_sec = tswapal(tv->tv_sec);
+            target_tv->tv_usec = tswapal(tv->tv_usec);
         } else {
             gemu_log("Unsupported ancillary data: %d/%d\n",
                                         cmsg->cmsg_level, cmsg->cmsg_type);

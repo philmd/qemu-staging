@@ -19,6 +19,7 @@
 
 KVMState *kvm_state;
 bool kvm_kernel_irqchip;
+bool kvm_async_interrupt_injection;
 
 int kvm_init_vcpu(CPUArchState *env)
 {

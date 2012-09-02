@@ -155,13 +155,17 @@ static const ARMCPRegInfo cp_reginfo[] = {
      * the unified TLB ops but also the dside/iside/inner-shareable variants.
      */
     { .name = "TLBIALL", .cp = 15, .crn = 8, .crm = CP_ANY,
-      .opc1 = CP_ANY, .opc2 = 0, .access = PL1_W, .writefn = tlbiall_write, },
+      .opc1 = CP_ANY, .opc2 = 0, .access = PL1_W, .writefn = tlbiall_write,
+      .type = ARM_CP_NO_MIGRATE },
     { .name = "TLBIMVA", .cp = 15, .crn = 8, .crm = CP_ANY,
-      .opc1 = CP_ANY, .opc2 = 1, .access = PL1_W, .writefn = tlbimva_write, },
+      .opc1 = CP_ANY, .opc2 = 1, .access = PL1_W, .writefn = tlbimva_write,
+      .type = ARM_CP_NO_MIGRATE },
     { .name = "TLBIASID", .cp = 15, .crn = 8, .crm = CP_ANY,
-      .opc1 = CP_ANY, .opc2 = 2, .access = PL1_W, .writefn = tlbiasid_write, },
+      .opc1 = CP_ANY, .opc2 = 2, .access = PL1_W, .writefn = tlbiasid_write,
+      .type = ARM_CP_NO_MIGRATE },
     { .name = "TLBIMVAA", .cp = 15, .crn = 8, .crm = CP_ANY,
-      .opc1 = CP_ANY, .opc2 = 3, .access = PL1_W, .writefn = tlbimvaa_write, },
+      .opc1 = CP_ANY, .opc2 = 3, .access = PL1_W, .writefn = tlbimvaa_write,
+      .type = ARM_CP_NO_MIGRATE },
     /* Cache maintenance ops; some of this space may be overridden later. */
     { .name = "CACHEMAINT", .cp = 15, .crn = 7, .crm = CP_ANY,
       .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W,
@@ -196,7 +200,8 @@ static const ARMCPRegInfo not_v7_cp_reginfo[] = {
       .resetvalue = 0 },
     /* v6 doesn't have the cache ID registers but Linux reads them anyway */
     { .name = "DUMMY", .cp = 15, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = CP_ANY,
-      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+      .access = PL1_R, .type = ARM_CP_CONST | ARM_CP_NO_MIGRATE,
+      .resetvalue = 0 },
     REGINFO_SENTINEL
 };
 
@@ -234,6 +239,21 @@ static const ARMCPRegInfo v6_cp_reginfo[] = {
       .resetvalue = 0, .writefn = cpacr_write },
     REGINFO_SENTINEL
 };
+
+
+static int raw_read(CPUARMState *env, const ARMCPRegInfo *ri,
+                    uint64_t *value)
+{
+    *value = CPREG_FIELD32(env, ri);
+    return 0;
+}
+
+static int raw_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                     uint64_t value)
+{
+    CPREG_FIELD32(env, ri) = value;
+    return 0;
+}
 
 static int pmreg_read(CPUARMState *env, const ARMCPRegInfo *ri,
                       uint64_t *value)
@@ -366,13 +386,16 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
     { .name = "PMCNTENSET", .cp = 15, .crn = 9, .crm = 12, .opc1 = 0, .opc2 = 1,
       .access = PL0_RW, .resetvalue = 0,
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pmcnten),
-      .readfn = pmreg_read, .writefn = pmcntenset_write },
+      .readfn = pmreg_read, .writefn = pmcntenset_write,
+      .raw_readfn = raw_read, .raw_writefn = raw_write },
     { .name = "PMCNTENCLR", .cp = 15, .crn = 9, .crm = 12, .opc1 = 0, .opc2 = 2,
       .access = PL0_RW, .fieldoffset = offsetof(CPUARMState, cp15.c9_pmcnten),
-      .readfn = pmreg_read, .writefn = pmcntenclr_write },
+      .readfn = pmreg_read, .writefn = pmcntenclr_write,
+      .type = ARM_CP_NO_MIGRATE },
     { .name = "PMOVSR", .cp = 15, .crn = 9, .crm = 12, .opc1 = 0, .opc2 = 3,
       .access = PL0_RW, .fieldoffset = offsetof(CPUARMState, cp15.c9_pmovsr),
-      .readfn = pmreg_read, .writefn = pmovsr_write },
+      .readfn = pmreg_read, .writefn = pmovsr_write,
+      .raw_readfn = raw_read, .raw_writefn = raw_write },
     /* Unimplemented so WI. Strictly speaking write accesses in PL0 should
      * respect PMUSERENR.
      */
@@ -389,7 +412,8 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
     { .name = "PMXEVTYPER", .cp = 15, .crn = 9, .crm = 13, .opc1 = 0, .opc2 = 1,
       .access = PL0_RW,
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pmxevtyper),
-      .readfn = pmreg_read, .writefn = pmxevtyper_write },
+      .readfn = pmreg_read, .writefn = pmxevtyper_write,
+      .raw_readfn = raw_read, .raw_writefn = raw_write },
     /* Unimplemented, RAZ/WI. XXX PMUSERENR */
     { .name = "PMXEVCNTR", .cp = 15, .crn = 9, .crm = 13, .opc1 = 0, .opc2 = 2,
       .access = PL0_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
@@ -397,22 +421,22 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
       .access = PL0_R | PL1_RW,
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pmuserenr),
       .resetvalue = 0,
-      .writefn = pmuserenr_write },
+      .writefn = pmuserenr_write, .raw_writefn = raw_write },
     { .name = "PMINTENSET", .cp = 15, .crn = 9, .crm = 14, .opc1 = 0, .opc2 = 1,
       .access = PL1_RW,
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pminten),
       .resetvalue = 0,
-      .writefn = pmintenset_write },
+      .writefn = pmintenset_write, .raw_writefn = raw_write },
     { .name = "PMINTENCLR", .cp = 15, .crn = 9, .crm = 14, .opc1 = 0, .opc2 = 2,
-      .access = PL1_RW,
+      .access = PL1_RW, .type = ARM_CP_NO_MIGRATE,
       .fieldoffset = offsetof(CPUARMState, cp15.c9_pminten),
-      .resetvalue = 0,
-      .writefn = pmintenclr_write },
+      .resetvalue = 0, .writefn = pmintenclr_write, },
     { .name = "SCR", .cp = 15, .crn = 1, .crm = 1, .opc1 = 0, .opc2 = 0,
       .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c1_scr),
       .resetvalue = 0, },
+    // XXX add the ersatz register encodings for migrating CCSIDR state
     { .name = "CCSIDR", .cp = 15, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 0,
-      .access = PL1_R, .readfn = ccsidr_read },
+      .access = PL1_R, .readfn = ccsidr_read, .type = ARM_CP_NO_MIGRATE },
     { .name = "CSSELR", .cp = 15, .crn = 0, .crm = 0, .opc1 = 2, .opc2 = 0,
       .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c0_cssel),
       .writefn = csselr_write, .resetvalue = 0 },
@@ -461,7 +485,7 @@ static const ARMCPRegInfo t2ee_cp_reginfo[] = {
       .writefn = teecr_write },
     { .name = "TEEHBR", .cp = 14, .crn = 1, .crm = 0, .opc1 = 6, .opc2 = 0,
       .access = PL0_RW, .fieldoffset = offsetof(CPUARMState, teehbr),
-      .resetvalue = 0,
+      .resetvalue = 0, .raw_readfn = raw_read, .raw_writefn = raw_write,
       .readfn = teehbr_read, .writefn = teehbr_write },
     REGINFO_SENTINEL
 };
@@ -486,7 +510,8 @@ static const ARMCPRegInfo generic_timer_cp_reginfo[] = {
     /* Dummy implementation: RAZ/WI the whole crn=14 space */
     { .name = "GENERIC_TIMER", .cp = 15, .crn = 14,
       .crm = CP_ANY, .opc1 = CP_ANY, .opc2 = CP_ANY,
-      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+      .access = PL1_RW, .type = ARM_CP_CONST | ARM_CP_NO_MIGRATE,
+      .resetvalue = 0 },
     REGINFO_SENTINEL
 };
 
@@ -579,7 +604,7 @@ static const ARMCPRegInfo vapa_cp_reginfo[] = {
       .writefn = par_write },
 #ifndef CONFIG_USER_ONLY
     { .name = "ATS", .cp = 15, .crn = 7, .crm = 8, .opc1 = 0, .opc2 = CP_ANY,
-      .access = PL1_W, .writefn = ats_write },
+      .access = PL1_W, .writefn = ats_write, .type = ARM_CP_NO_MIGRATE },
 #endif
     REGINFO_SENTINEL
 };
@@ -664,11 +689,11 @@ static int arm946_prbs_write(CPUARMState *env, const ARMCPRegInfo *ri,
 
 static const ARMCPRegInfo pmsav5_cp_reginfo[] = {
     { .name = "DATA_AP", .cp = 15, .crn = 5, .crm = 0, .opc1 = 0, .opc2 = 0,
-      .access = PL1_RW,
+      .access = PL1_RW, .type = ARM_CP_NO_MIGRATE,
       .fieldoffset = offsetof(CPUARMState, cp15.c5_data), .resetvalue = 0,
       .readfn = pmsav5_data_ap_read, .writefn = pmsav5_data_ap_write, },
     { .name = "INSN_AP", .cp = 15, .crn = 5, .crm = 0, .opc1 = 0, .opc2 = 1,
-      .access = PL1_RW,
+      .access = PL1_RW, .type = ARM_CP_NO_MIGRATE,
       .fieldoffset = offsetof(CPUARMState, cp15.c5_insn), .resetvalue = 0,
       .readfn = pmsav5_insn_ap_read, .writefn = pmsav5_insn_ap_write, },
     { .name = "DATA_EXT_AP", .cp = 15, .crn = 5, .crm = 0, .opc1 = 0, .opc2 = 2,
@@ -801,6 +826,7 @@ static const ARMCPRegInfo omap_cp_reginfo[] = {
       .writefn = omap_threadid_write },
     { .name = "TI925T_STATUS", .cp = 15, .crn = 15,
       .crm = 8, .opc1 = 0, .opc2 = 0, .access = PL1_RW,
+      .type = ARM_CP_NO_MIGRATE,
       .readfn = arm_cp_read_zero, .writefn = omap_wfi_write, },
     /* TODO: Peripheral port remap register:
      * On OMAP2 mcr p15, 0, rn, c15, c2, 4 sets up the interrupt controller
@@ -808,7 +834,8 @@ static const ARMCPRegInfo omap_cp_reginfo[] = {
      * when MMU is off.
      */
     { .name = "OMAP_CACHEMAINT", .cp = 15, .crn = 7, .crm = CP_ANY,
-      .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W, .type = ARM_CP_OVERRIDE,
+      .opc1 = 0, .opc2 = CP_ANY, .access = PL1_W,
+      .type = ARM_CP_OVERRIDE | ARM_CP_NO_MIGRATE,
       .writefn = omap_cachemaint_write },
     { .name = "C9", .cp = 15, .crn = 9,
       .crm = CP_ANY, .opc1 = CP_ANY, .opc2 = CP_ANY, .access = PL1_RW,
@@ -848,7 +875,8 @@ static const ARMCPRegInfo dummy_c15_cp_reginfo[] = {
      */
     { .name = "C15_IMPDEF", .cp = 15, .crn = 15,
       .crm = CP_ANY, .opc1 = CP_ANY, .opc2 = CP_ANY,
-      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+      .access = PL1_RW, .type = ARM_CP_CONST | ARM_CP_NO_MIGRATE,
+      .resetvalue = 0 },
     REGINFO_SENTINEL
 };
 
@@ -894,8 +922,8 @@ static const ARMCPRegInfo strongarm_cp_reginfo[] = {
     /* Ignore ReadBuffer accesses */
     { .name = "C9_READBUFFER", .cp = 15, .crn = 9,
       .crm = CP_ANY, .opc1 = CP_ANY, .opc2 = CP_ANY,
-      .access = PL1_RW, .type = ARM_CP_CONST | ARM_CP_OVERRIDE,
-      .resetvalue = 0 },
+      .access = PL1_RW, .resetvalue = 0,
+      .type = ARM_CP_CONST | ARM_CP_OVERRIDE | ARM_CP_NO_MIGRATE },
     REGINFO_SENTINEL
 };
 
@@ -920,7 +948,7 @@ static int mpidr_read(CPUARMState *env, const ARMCPRegInfo *ri,
 
 static const ARMCPRegInfo mpidr_cp_reginfo[] = {
     { .name = "MPIDR", .cp = 15, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 5,
-      .access = PL1_R, .readfn = mpidr_read },
+      .access = PL1_R, .readfn = mpidr_read, .type = ARM_CP_NO_MIGRATE },
     REGINFO_SENTINEL
 };
 
@@ -1103,7 +1131,8 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             .name = "PMCR", .cp = 15, .crn = 9, .crm = 12, .opc1 = 0, .opc2 = 0,
             .access = PL0_RW, .resetvalue = cpu->midr & 0xff000000,
             .fieldoffset = offsetof(CPUARMState, cp15.c9_pmcr),
-            .readfn = pmreg_read, .writefn = pmcr_write
+            .readfn = pmreg_read, .writefn = pmcr_write,
+            .raw_readfn = raw_read, .raw_writefn = raw_write,
         };
         ARMCPRegInfo clidr = {
             .name = "CLIDR", .cp = 15, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 1,
@@ -1175,7 +1204,7 @@ void register_cp_regs_for_features(ARMCPU *cpu)
             { .name = "MIDR",
               .cp = 15, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 0,
               .access = PL1_R, .resetvalue = cpu->midr,
-              .writefn = arm_cp_write_ignore,
+              .writefn = arm_cp_write_ignore, .raw_writefn = raw_write,
               .fieldoffset = offsetof(CPUARMState, cp15.c0_cpuid) },
             { .name = "CTR",
               .cp = 15, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 1,

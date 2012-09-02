@@ -417,12 +417,25 @@ void armv7m_nvic_complete_irq(void *opaque, int irq);
  *  Crn, Crm, opc1, opc2 fields
  *  32 or 64 bit register (ie is it accessed via MRC/MCR
  *    or via MRRC/MCRR?)
- * We allow 4 bits for opc1 because MRRC/MCRR have a 4 bit field.
- * (In this case crn and opc2 should be zero.)
+ * This mapping is arbitrary, but we choose to use the same encoding
+ * that the kernel KVM code uses for the index in the KVM_GET/SET_MSR
+ * API:
+ *
+ * 64-bit coprocessor register:
+ *        ...|19 18 17 16|15|14 13 12 11 10  9  8| 7  6  5  4 |3  2  1  0|
+ *   ...0  0 |  cp num   | 1| 0  0  0  0  0  0  0|   opc1     |   CRm    |
+ *
+ * 32-bit coprocessor register:
+ *        ...|19 18 17 16|15|14|13 12 11|10  9  8  7 |6  5  4 |3  2  1  0|
+ *   ...0  0 |  cp num   | 0| 0|  opc1  |    CRn     | opc2   |   CRm    |
+ *
+ * to avoid having to do a conversion when looking up an ARMCPRegInfo
+ * given a kernel MSR index.
  */
 #define ENCODE_CP_REG(cp, is64, crn, crm, opc1, opc2)   \
-    (((cp) << 16) | ((is64) << 15) | ((crn) << 11) |    \
-     ((crm) << 7) | ((opc1) << 3) | (opc2))
+    (((cp) << 16) | ((is64) << 15) | (crm) |            \
+     ((is64) ? ((opc1) << 4) :                          \
+      ((opc1) << 11 | ((crn) << 7) | (opc2) << 4)))
 
 /* ARMCPRegInfo type field bits. If the SPECIAL bit is set this is a
  * special-behaviour cp reg and bits [15..8] indicate what behaviour

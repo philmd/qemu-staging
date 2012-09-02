@@ -60,6 +60,12 @@ typedef struct ARMCPU {
 
     /* Coprocessor information */
     GHashTable *cp_regs;
+    /* List of (register index, value) tuples which we use for marshalling
+     * register state between the kernel and QEMU (for KVM)  and between
+     * two QEMUs (for migration).
+     */
+    uint64_t *cpreg_tuples;
+    int cpreg_tuples_len;
 
     /* The instance init functions for implementation-specific subclasses
      * set these fields to specify the implementation-dependent values of

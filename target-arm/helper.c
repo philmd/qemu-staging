@@ -64,6 +64,103 @@ static int vfp_gdb_set_reg(CPUARMState *env, uint8_t *buf, int reg)
     return 0;
 }
 
+static int read_raw_cp_reg(CPUARMState *env, const ARMCPRegInfo *ri,
+                           uint64_t *v)
+{
+    /* Raw read of a coprocessor register (as needed for migration, etc)
+     * return 0 on success, 1 if the read is impossible for some reason.
+     */
+    assert(!(ri->type & ARM_CP_SPECIAL));
+    if (ri->type & ARM_CP_CONST) {
+        *v = ri->resetvalue;
+    } else if (ri->raw_readfn) {
+        return ri->raw_readfn(env, ri, v);
+    } else if (ri->readfn) {
+        return ri->readfn(env, ri, v);
+    } else {
+        if (ri->type & ARM_CP_64BIT) {
+            *v = CPREG_FIELD64(env, ri);
+        } else {
+            *v = CPREG_FIELD32(env, ri);
+        }
+    }
+    return 0;
+}
+
+static int write_raw_cp_reg(CPUARMState *env, const ARMCPRegInfo *ri,
+                            int64_t v)
+{
+    /* Raw write of a coprocessor register (as needed for migration, etc).
+     * Return 0 on success, 1 if the write is impossible for some reason.
+     */
+    assert(!(ri->type & ARM_CP_SPECIAL));
+    if (ri->type & ARM_CP_CONST) {
+        return 0;
+    } else if (ri->raw_writefn) {
+        return ri->writefn(env, ri, v);
+    } else if (ri->writefn) {
+        return ri->writefn(env, ri, v);
+    } else {
+        if (ri->type & ARM_CP_64BIT) {
+            CPREG_FIELD64(env, ri) = v;
+        } else {
+            CPREG_FIELD32(env, ri) = v;
+        }
+    }
+    return 0;
+}
+
+bool write_cp_state_to_list(ARMCPU *cpu, bool fail_on_error)
+{
+    /* Write the coprocessor state from cpu->env to the (index,value) list. */
+    int i;
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        uint64_t regidx = cpu->cpreg_tuples[i];
+        const ARMCPRegInfo *ri;
+        uint64_t v;
+        ri = get_arm_cp_reginfo(cpu, regidx);
+        if (!ri) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        if (ri->type & (ARM_CP_NO_MIGRATE|ARM_CP_SPECIAL)) {
+            continue;
+        }
+        if (read_raw_cp_reg(&cpu->env, ri, &v)) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        cpu->cpreg_tuples[i + 1] = v;
+    }
+    return true;
+}
+
+bool write_list_to_cp_state(ARMCPU *cpu, bool fail_on_error)
+{
+    int i;
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        uint64_t regidx = cpu->cpreg_tuples[i];
+        uint64_t v = cpu->cpreg_tuples[i + 1];
+        const ARMCPRegInfo *ri;
+        ri = get_arm_cp_reginfo(cpu, regidx);
+        if (!ri) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        if (write_raw_cp_reg(&cpu->env, ri, v) && fail_on_error) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 static int dacr_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value)
 {
     env->cp15.c3 = value;

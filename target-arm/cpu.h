@@ -583,14 +583,14 @@ struct ARMCPRegInfo {
      * migration. This only needs to be provided if there is also a
      * readfn and it makes an access permission check.
      */
-    CPReadfn *raw_readfn;
+    CPReadFn *raw_readfn;
     /* Function for doing a "raw" write; used when we need to copy KVM
      * kernel coprocessor state into userspace, or for inbound
      * migration. This only needs to be provided if there is also a
      * readfn and it makes an access permission check or masks out
      * "unwritable" bits.
      */
-    CPWritefn *raw_writefn;
+    CPWriteFn *raw_writefn;
     /* Function for resetting the register. If NULL, then reset will be done
      * by writing resetvalue to the field specified in fieldoffset. If
      * fieldoffset is 0 then no reset will be done.
@@ -633,6 +633,9 @@ static inline bool cp_access_ok(CPUARMState *env,
 {
     return (ri->access >> ((arm_current_pl(env) * 2) + isread)) & 1;
 }
+
+bool write_cp_state_to_list(ARMCPU *cpu, bool fail_on_error);
+bool write_list_to_cp_state(ARMCPU *cpu, bool fail_on_error);
 
 /* Does the core conform to the the "MicroController" profile. e.g. Cortex-M3.
    Note the M in older cores (eg. ARM7TDMI) stands for Multiply. These are

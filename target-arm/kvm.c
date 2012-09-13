@@ -68,6 +68,13 @@ struct reg {
         offsetof(CPUARMState, QEMUFIELD)         \
     }
 
+#define VFPSYSREG(R)                                       \
+    {                                                      \
+        KVM_REG_ARM | KVM_REG_SIZE_U32 | KVM_REG_ARM_VFP | \
+        KVM_REG_ARM_VFP_ID_##R,                            \
+        offsetof(CPUARMState, vfp.xregs[ARM_VFP_##R])      \
+    }
+
 const struct reg regs[] = {
     /* R0_usr .. R14_usr */
     COREREG(usr_regs[0], regs[0]),
@@ -115,6 +122,15 @@ const struct reg regs[] = {
     CP15REG(1, 0, 0, 0, cp15.c1_sys), /* SCTLR */
     CP15REG(2, 0, 0, 2, cp15.c2_control), /* TTBCR */
     CP15REG(3, 0, 0, 0, cp15.c3), /* DACR */
+    /* VFP system registers; for the moment we assume the
+     * kernel has VFP support compiled in.
+     */
+    VFPSYSREG(FPSID),
+    VFPSYSREG(MVFR1),
+    VFPSYSREG(MVFR0),
+    VFPSYSREG(FPEXC),
+    VFPSYSREG(FPINST),
+    VFPSYSREG(FPINST2),
 };
 
 int kvm_arch_put_registers(CPUARMState *env, int level)
@@ -122,7 +138,7 @@ int kvm_arch_put_registers(CPUARMState *env, int level)
     struct kvm_one_reg r;
     int mode, bn;
     int ret, i;
-    uint32_t cpsr;
+    uint32_t cpsr, fpscr;
     uint64_t ttbr;
 
     /* Make sure the banked regs are properly set */
@@ -173,6 +189,32 @@ int kvm_arch_put_registers(CPUARMState *env, int level)
         (2 << KVM_REG_ARM_CRM_SHIFT) | (1 << KVM_REG_ARM_OPC1_SHIFT);
     r.addr = (uintptr_t)(&ttbr);
     ret = kvm_vcpu_ioctl(env, KVM_SET_ONE_REG, &r);
+    if (ret) {
+        return ret;
+    }
+
+    /* VFP registers */
+    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | KVM_REG_ARM_VFP;
+    for (i = 0; i < 32; i++) {
+        r.addr = (uintptr_t)(&env->vfp.regs[i]);
+        ret = kvm_vcpu_ioctl(env, KVM_SET_ONE_REG, &r);
+        if (ret == ENOENT) {
+            /* Stop at the first nonexistent register, to avoid having
+             * to ask the kernel in advance whether it has 16 or 32
+             * VFP registers.
+             */
+            break;
+        } else if (ret) {
+            return ret;
+        }
+        r.id++;
+    }
+
+    r.id = KVM_REG_ARM | KVM_REG_SIZE_U32 | KVM_REG_ARM_VFP |
+        KVM_REG_ARM_VFP_ID_FPSCR;
+    fpscr = vfp_get_fpscr(env);
+    r.addr = (uintptr_t)&fpscr;
+    ret = kvm_vcpu_ioctl(env, KVM_SET_ONE_REG, &r);
 
     return ret;
 }
@@ -182,7 +224,7 @@ int kvm_arch_get_registers(CPUARMState *env)
     struct kvm_one_reg r;
     int mode, bn;
     int ret, i;
-    uint32_t cpsr;
+    uint32_t cpsr, fpscr;
     uint64_t ttbr;
 
     for (i = 0; i < ARRAY_SIZE(regs); i++) {
@@ -246,6 +288,32 @@ int kvm_arch_get_registers(CPUARMState *env)
      */
     env->cp15.c2_mask = ~(((uint32_t)0xffffffffu) >> env->cp15.c2_control);
     env->cp15.c2_base_mask = ~((uint32_t)0x3fffu >> env->cp15.c2_control);
+
+    /* VFP registers */
+    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | KVM_REG_ARM_VFP;
+    for (i = 0; i < 32; i++) {
+        r.addr = (uintptr_t)(&env->vfp.regs[i]);
+        ret = kvm_vcpu_ioctl(env, KVM_GET_ONE_REG, &r);
+        if (ret == ENOENT) {
+            /* Stop at the first nonexistent register, to avoid having
+             * to ask the kernel in advance whether it has 16 or 32
+             * VFP registers.
+             */
+            break;
+        } else if (ret) {
+            return ret;
+        }
+        r.id++;
+    }
+
+    r.id = KVM_REG_ARM | KVM_REG_SIZE_U32 | KVM_REG_ARM_VFP |
+        KVM_REG_ARM_VFP_ID_FPSCR;
+    r.addr = (uintptr_t)&fpscr;
+    ret = kvm_vcpu_ioctl(env, KVM_GET_ONE_REG, &r);
+    if (ret) {
+        return ret;
+    }
+    vfp_set_fpscr(env, fpscr);
 
     return 0;
 }

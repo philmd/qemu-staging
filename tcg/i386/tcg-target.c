@@ -103,7 +103,7 @@ static const int tcg_target_call_oarg_regs[] = {
 #if TCG_TARGET_REG_BITS == 64
 # define have_cmov 1
 #elif defined(CONFIG_CPUID_H)
-#include <cpuid.h>
+#include <qemu/cpuid.h>
 static bool have_cmov;
 #else
 # define have_cmov 0

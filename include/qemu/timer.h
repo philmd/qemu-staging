@@ -171,11 +171,34 @@ static inline int64_t cpu_get_real_ticks(void)
 
 #elif defined(__i386__)
 
+#include "qemu/cpuid.h"
+
 static inline int64_t cpu_get_real_ticks(void)
 {
-    int64_t val;
-    asm volatile ("rdtsc" : "=A" (val));
-    return val;
+    /* There is no convenient GCC define to let us find out whether
+     * the target CPU has 'rdtsc', so we must do an initial runtime
+     * check. Our fallback is the same kind of simple monotonic count
+     * as the default cpu_get_real_ticks implementation.
+     */
+    static int64_t ticks = 0;
+
+#if defined(CONFIG_CPUID_H)
+    static bool checked_rdtsc;
+    static bool have_rdtsc;
+
+    if (!checked_rdtsc) {
+        unsigned int a, b, c, d;
+        have_rdtsc = (__get_cpuid(1, &a, &b, &c, &d) && (d & (1 << 4)));
+        checked_rdtsc = true;
+    }
+    if (have_rdtsc) {
+        int64_t val;
+        asm volatile ("rdtsc" : "=A" (val));
+        return val;
+    }
+    /* Otherwise fall through into no-rdtsc code */
+#endif
+    return ticks++;
 }
 
 #elif defined(__x86_64__)

@@ -52,7 +52,8 @@ void cpu_resume_from_signal(CPUArchState *env, void *puc)
 #endif
 
 /* Execute a TB, and fix up the CPU state afterwards if necessary */
-static inline tcg_target_ulong cpu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
+static inline tcg_target_ulong cpu_tb_exec(CPUArchState *env, CPUState *cpu,
+                                           uint8_t *tb_ptr)
 {
     tcg_target_ulong next_tb = tcg_qemu_tb_exec(env, tb_ptr);
     if ((next_tb & TB_EXIT_MASK) > TB_EXIT_IDX1) {
@@ -62,6 +63,12 @@ static inline tcg_target_ulong cpu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
          */
         TranslationBlock *tb = (TranslationBlock *)(next_tb & ~TB_EXIT_MASK);
         cpu_pc_from_tb(env, tb);
+    }
+    if ((next_tb & TB_EXIT_MASK) == TB_EXIT_REQUESTED) {
+        /* We were asked to stop executing TBs (probably a pending
+         * interrupt. We've now stopped, so clear the flag.
+         */
+        cpu->tcg_exit_req = 0;
     }
     return next_tb;
 }
@@ -83,7 +90,7 @@ static void cpu_exec_nocache(CPUArchState *env, int max_cycles,
                      max_cycles);
     cpu->current_tb = tb;
     /* execute the generated code */
-    cpu_tb_exec(env, tb->tc_ptr);
+    cpu_tb_exec(env, cpu, tb->tc_ptr);
     cpu->current_tb = NULL;
     tb_phys_invalidate(tb, -1);
     tb_free(tb);
@@ -606,8 +613,21 @@ int cpu_exec(CPUArchState *env)
                 if (likely(!cpu->exit_request)) {
                     tc_ptr = tb->tc_ptr;
                     /* execute the generated code */
-                    next_tb = cpu_tb_exec(env, tc_ptr);
-                    if ((next_tb & TB_EXIT_MASK) == TB_EXIT_ICOUNT_EXPIRED) {
+                    next_tb = cpu_tb_exec(env, cpu, tc_ptr);
+                    switch (next_tb & TB_EXIT_MASK) {
+                    case TB_EXIT_REQUESTED:
+                        /* Something asked us to stop executing
+                         * chained TBs; just continue round the main
+                         * loop. Whatever requested the exit will also
+                         * have set something else (eg exit_request or
+                         * interrupt_request) which we will handle
+                         * next time around the loop.
+                         */
+                        tb = (TranslationBlock *)(next_tb & ~TB_EXIT_MASK);
+                        next_tb = 0;
+                        break;
+                    case TB_EXIT_ICOUNT_EXPIRED:
+                    {
                         /* Instruction counter expired.  */
                         int insns_left;
                         tb = (TranslationBlock *)(next_tb & ~TB_EXIT_MASK);
@@ -631,6 +651,10 @@ int cpu_exec(CPUArchState *env)
                             next_tb = 0;
                             cpu_loop_exit(env);
                         }
+                        break;
+                    }
+                    default:
+                        break;
                     }
                 }
                 cpu->current_tb = NULL;

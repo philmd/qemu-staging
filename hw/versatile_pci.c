@@ -59,7 +59,15 @@ static const MemoryRegionOps pci_vpb_config_ops = {
 
 static int pci_vpb_map_irq(PCIDevice *d, int irq_num)
 {
-    return irq_num;
+    /* Slot to IRQ mapping for RealView Platform Baseboard 926 backplane
+     *      name    slot    IntA    IntB    IntC    IntD
+     *      A       31      IRQ28   IRQ29   IRQ30   IRQ27
+     *      B       30      IRQ27   IRQ28   IRQ29   IRQ30
+     *      C       29      IRQ30   IRQ27   IRQ28   IRQ29
+     * Slot C is for the host bridge; A and B the peripherals.
+     * Our output irqs 0..3 correspond to the baseboard's 27..30.
+     */
+    return (PCI_SLOT(d->devfn) + irq_num - 2) % PCI_NUM_PINS;
 }
 
 static void pci_vpb_set_irq(void *opaque, int irq_num, int level)
@@ -79,11 +87,13 @@ static void pci_vpb_init(Object *obj)
 
     pci_bus_new_inplace(&s->pci_bus, DEVICE(obj), "pci",
                         get_system_memory(), &s->pci_io_space,
-                        PCI_DEVFN(11, 0));
+                        PCI_DEVFN(29, 0));
     h->bus = &s->pci_bus;
 
     object_initialize(&s->pci_dev, TYPE_VERSATILE_PCI_HOST);
     qdev_set_parent_bus(DEVICE(&s->pci_dev), BUS(&s->pci_bus));
+    object_property_set_int(OBJECT(&s->pci_dev), PCI_DEVFN(29, 0), "addr",
+                            NULL);
 }
 
 static void pci_vpb_realize(DeviceState *dev, Error **errp)

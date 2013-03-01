@@ -15,7 +15,6 @@
 typedef struct {
     SysBusDevice busdev;
     qemu_irq irq[4];
-    int realview;
     MemoryRegion mem_config;
     MemoryRegion mem_config2;
     MemoryRegion isa;
@@ -77,7 +76,7 @@ static int pci_vpb_init(SysBusDevice *dev)
     /* Our memory regions are:
      * 0 : PCI self config window
      * 1 : PCI config window
-     * 2 : PCI IO window (realview_pci only)
+     * 2 : PCI IO window
      */
     memory_region_init_io(&s->mem_config, &pci_vpb_config_ops, bus,
                           "pci-vpb-selfconfig", 0x1000000);
@@ -85,20 +84,11 @@ static int pci_vpb_init(SysBusDevice *dev)
     memory_region_init_io(&s->mem_config2, &pci_vpb_config_ops, bus,
                           "pci-vpb-config", 0x1000000);
     sysbus_init_mmio(dev, &s->mem_config2);
-    if (s->realview) {
-        isa_mmio_setup(&s->isa, 0x0100000);
-        sysbus_init_mmio(dev, &s->isa);
-    }
+    isa_mmio_setup(&s->isa, 0x0100000);
+    sysbus_init_mmio(dev, &s->isa);
 
     pci_create_simple(bus, -1, "versatile_pci_host");
     return 0;
-}
-
-static int pci_realview_init(SysBusDevice *dev)
-{
-    PCIVPBState *s = FROM_SYSBUS(PCIVPBState, dev);
-    s->realview = 1;
-    return pci_vpb_init(dev);
 }
 
 static int versatile_pci_host_init(PCIDevice *d)
@@ -140,24 +130,9 @@ static const TypeInfo pci_vpb_info = {
     .class_init    = pci_vpb_class_init,
 };
 
-static void pci_realview_class_init(ObjectClass *klass, void *data)
-{
-    SysBusDeviceClass *sdc = SYS_BUS_DEVICE_CLASS(klass);
-
-    sdc->init = pci_realview_init;
-}
-
-static const TypeInfo pci_realview_info = {
-    .name          = "realview_pci",
-    .parent        = TYPE_SYS_BUS_DEVICE,
-    .instance_size = sizeof(PCIVPBState),
-    .class_init    = pci_realview_class_init,
-};
-
 static void versatile_pci_register_types(void)
 {
     type_register_static(&pci_vpb_info);
-    type_register_static(&pci_realview_info);
     type_register_static(&versatile_pci_host_info);
 }
 

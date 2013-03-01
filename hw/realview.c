@@ -214,7 +214,7 @@ static void realview_init(QEMUMachineInitArgs *args,
     sysbus_create_simple("pl031", 0x10017000, pic[10]);
 
     if (!is_pb) {
-        dev = qdev_create(NULL, "realview_pci");
+        dev = qdev_create(NULL, "versatile_pci");
         busdev = SYS_BUS_DEVICE(dev);
         qdev_init_nofail(dev);
         sysbus_mmio_map(busdev, 0, 0x61000000); /* PCI self-config */

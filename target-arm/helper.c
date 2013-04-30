@@ -361,6 +361,22 @@ static int csselr_write(CPUARMState *env, const ARMCPRegInfo *ri,
     return 0;
 }
 
+static int ccsidr_raw_read(CPUARMState *env, const ARMCPRegInfo *ri,
+                           uint64_t *value)
+{
+    ARMCPU *cpu = arm_env_get_cpu(env);
+
+    *value = cpu->ccsidr[(ri->opc1 << 3) | ri->opc2];
+    return 0;
+}
+
+static int ccsidr_raw_write(CPUARMState *env, const ARMCPRegInfo *ri,
+                            uint64_t value)
+{
+    // XXX ?
+    return 1;
+}
+
 static const ARMCPRegInfo v7_cp_reginfo[] = {
     /* DBGDRAR, DBGDSAR: always RAZ since we don't implement memory mapped
      * debug components
@@ -439,6 +455,61 @@ static const ARMCPRegInfo v7_cp_reginfo[] = {
     { .name = "CSSELR", .cp = 15, .crn = 0, .crm = 0, .opc1 = 2, .opc2 = 0,
       .access = PL1_RW, .fieldoffset = offsetof(CPUARMState, cp15.c0_cssel),
       .writefn = csselr_write, .resetvalue = 0 },
+    /* These register definitions provide direct access to the CCSIDR
+     * register bank for migration and syncing with KVM. They aren't
+     * visible directly to the guest. Note that the ID values here
+     * must be the same as KVM uses in its ABI.
+     */
+    // XXX very repetitive. also how much of the access stuff do we
+    // need to avoid reset issues?
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 0,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 1,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 2,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 3,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 4,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 5,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 6,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 0, .opc2 = 7,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 0,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 1,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 2,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 3,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 4,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 5,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 6,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
+    { .name = "CCSIDR1", .cp = 17, .crn = 0, .crm = 0, .opc1 = 1, .opc2 = 7,
+      .access = PL1_R, .readfn = ccsidr_raw_read,
+      .raw_writefn = ccsidr_raw_write },
     /* Auxiliary ID register: this actually has an IMPDEF value but for now
      * just RAZ for all cores:
      */

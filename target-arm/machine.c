@@ -1,5 +1,7 @@
 #include "hw/hw.h"
 #include "hw/boards.h"
+#include "sysemu/kvm.h"
+#include "kvm_arm.h"
 
 static bool vfp_needed(void *opaque)
 {
@@ -152,9 +154,16 @@ static void cpu_pre_save(void *opaque)
 {
     ARMCPU *cpu = opaque;
 
-    if (write_cp_state_to_list(cpu, true)) {
-        /* This should never fail. */
-        abort();
+    if (kvm_enabled()) {
+        if (write_kvmstate_to_list(cpu, true)) {
+            /* This should never fail */
+            abort();
+        }
+    } else {
+        if (write_cp_state_to_list(cpu, true)) {
+            /* This should never fail. */
+            abort();
+        }
     }
 
     memcpy(cpu->cpreg_vmstate_tuples, cpu->cpreg_tuples,
@@ -180,12 +189,18 @@ static int cpu_post_load(void *opaque, int version_id)
         v += 2;
     }
 
-    if (!write_list_to_cp_state(cpu, true)) {
-        return 1;
+    if (kvm_enabled()) {
+        if (!write_list_to_kvmstate(cpu, true)) {
+            return 1;
+        }
+        write_list_to_cp_state(cpu, false);
+    } else {
+        if (!write_list_to_cp_state(cpu, true)) {
+            return 1;
+        }
     }
 
     return 0;
-
 }
 
 const VMStateDescription vmstate_arm_cpu = {

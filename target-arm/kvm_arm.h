@@ -29,4 +29,39 @@
  */
 void kvm_arm_register_device(MemoryRegion *mr, uint64_t devid);
 
+/**
+ * write_kvmstate_to_list:
+ * @cpu: ARMCPU
+ * @fail_on_error: true to fail on any error/mismatch, false
+ *    to continue regardless
+ *
+ * Write the kernel's idea of the state of the coprocessor
+ * registers for this CPU to the cpreg_tuples[] list. If
+ * fail_on_error is set then we will stop (and return false)
+ * if the kernel doesn't recognise any of the register indexes
+ * in the tuples list. Otherwise we continue on regardless
+ * and always return true.
+ *
+ * Returns true on success, false on failure
+ */
+bool write_kvmstate_to_list(ARMCPU *cpu, bool fail_on_error);
+
+/**
+ * write_list_to_kvmstate:
+ * @cpu: ARMCPU
+ * @fail_on_error: true to fail on any error/mismatch, false
+ *    to continue regardless
+ *
+ * Write the coprocessor register state from the cprog_tuples[]
+ * list to the kernel. If fail_on_error is set then we will stop
+ * (and return false) if the kernel doesn't recognise any of the
+ * register indexes in the tuples list, or if the value can't
+ * be written (eg attempt to change value of read-only constant
+ * register or to set unsettable bits in a partially RO register).
+ * Otherwise we continue on regardless and always return true.
+ *
+ * Returns true on success, false on failure
+ */
+bool write_list_to_kvmstate(ARMCPU *cpu, bool fail_on_error);
+
 #endif

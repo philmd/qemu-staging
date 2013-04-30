@@ -41,12 +41,35 @@ unsigned long kvm_arch_vcpu_id(CPUState *cpu)
     return cpu->cpu_index;
 }
 
+static bool kvm_reg_should_sync(uint64_t regidx)
+{
+    /* Return true if the regidx is a register we should synchronize
+     * via the cpreg_tuples array (ie is not a core reg we sync by
+     * hand in kvm_arch_get/put_registers())
+     */
+    switch (regidx & KVM_REG_ARM_COPROC_MASK) {
+    case KVM_REG_ARM_CORE:
+    case KVM_REG_ARM_VFP:
+        return false;
+    default:
+        return true;
+    }
+}
+
+static int compare_u64(const void *a, const void *b)
+{
+    return *(uint64_t *)a - *(uint64_t *)b;
+}
+
 int kvm_arch_init_vcpu(CPUState *cs)
 {
     struct kvm_vcpu_init init;
-    int ret;
+    int i, ret, arraylen;
     uint64_t v;
     struct kvm_one_reg r;
+    struct kvm_reg_list rl;
+    struct kvm_reg_list *rlp;
+    ARMCPU *cpu = ARM_CPU(cs);
 
     init.target = KVM_ARM_TARGET_CORTEX_A15;
     memset(init.features, 0, sizeof(init.features));
@@ -54,6 +77,7 @@ int kvm_arch_init_vcpu(CPUState *cs)
     if (ret) {
         return ret;
     }
+
     /* Query the kernel to make sure it supports 32 VFP
      * registers: QEMU's "cortex-a15" CPU is always a
      * VFP-D32 core. The simplest way to do this is just
@@ -65,6 +89,65 @@ int kvm_arch_init_vcpu(CPUState *cs)
     if (ret == -ENOENT) {
         return -EINVAL;
     }
+
+    /* Populate the cpreg_tuples list based on the kernel's idea
+     * of what registers exist (and throw away the TCG-created list).
+     */
+    printf("kvm_arch_init_vcpu: set up tuple list for KVM\n");
+    rl.n = 0;
+    ret = kvm_vcpu_ioctl(cs, KVM_GET_REG_LIST, &rl);
+    if (ret != -E2BIG) {
+        return ret;
+    }
+    printf("got list size %lld\n", rl.n);
+    rlp = g_malloc(sizeof(struct kvm_reg_list) + rl.n * sizeof(uint64_t));
+    rlp->n = rl.n;
+    ret = kvm_vcpu_ioctl(cs, KVM_GET_REG_LIST, rlp);
+    if (ret) {
+        return ret;
+    }
+    printf("got full list\n");
+    /* Sort the list we get back from the kernel, since cpreg_tuples
+     * must be in strictly ascending order.
+     */
+    qsort(&rlp->reg, rlp->n, sizeof(rlp->reg[0]), compare_u64);
+
+    for (i = 0, arraylen = 0; i < rlp->n; i++) {
+        if (!kvm_reg_should_sync(rlp->reg[i])) {
+            continue;
+        }
+        arraylen += 2;
+    }
+
+    // consider function for "reallocate all the tuple arrays"
+    // also, what should we do about resetting the reset array (as it were)
+
+    cpu->cpreg_tuples = g_renew(uint64_t, cpu->cpreg_tuples, arraylen);
+    cpu->cpreg_vmstate_tuples = g_renew(uint64_t, cpu->cpreg_vmstate_tuples,
+                                        arraylen);
+    cpu->cpreg_tuples_len = arraylen;
+
+    for (i = 0, arraylen = 0; i < rlp->n; i++) {
+        uint64_t regidx = rlp->reg[i];
+        if (!kvm_reg_should_sync(regidx)) {
+            continue;
+        }
+        cpu->cpreg_tuples[arraylen] = regidx;
+        arraylen += 2;
+    }
+    assert(cpu->cpreg_tuples_len == arraylen);
+
+    if (!write_kvmstate_to_list(cpu, true)) {
+        /* Shouldn't happen unless kernel is inconsistent about
+         * what registers exist.
+         */
+        abort();
+    }
+
+    // TODO copy the tuple list for use on reset
+
+    // TODO think a bit more carefully about reset
+
     return ret;
 }
 
@@ -154,6 +237,61 @@ void kvm_arm_register_device(MemoryRegion *mr, uint64_t devid)
     QSLIST_INSERT_HEAD(&kvm_devices_head, kd, entries);
 }
 
+bool write_kvmstate_to_list(ARMCPU *cpu, bool fail_on_error)
+{
+    CPUState *cs = CPU(cpu);
+    int i;
+
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        struct kvm_one_reg r;
+        uint64_t regidx = cpu->cpreg_tuples[i];
+        int ret;
+
+        r.id = regidx;
+        r.addr = (uintptr_t)(cpu->cpreg_tuples + i + 1);
+
+        ret = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &r);
+        printf("KVM_GET_ONE_REG id 0x%" PRIx64 " value 0x%" PRIx64 " ret %d\n",
+               r.id, *((uint64_t *)(uintptr_t)r.addr), ret);
+        if (ret && fail_on_error) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool write_list_to_kvmstate(ARMCPU *cpu, bool fail_on_error)
+{
+    CPUState *cs = CPU(cpu);
+    int i;
+
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        struct kvm_one_reg r;
+        uint64_t regidx = cpu->cpreg_tuples[i];
+        int ret;
+
+        r.id = regidx;
+        r.addr = (uintptr_t)(cpu->cpreg_tuples + i + 1);
+
+        ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &r);
+        printf("KVM_SET_ONE_REG id 0x%" PRIx64 " value 0x%" PRIx64 " ret %d\n",
+               r.id, *((uint64_t *)(uintptr_t)r.addr), ret);
+        if (ret && fail_on_error) {
+            /* We might fail for "unknown register" and also for
+             * "you tried to set a register which is constant with
+             * a different value from what it actually contains".
+             */
+            return false;
+        }
+    }
+
+    // TODO what about registers which both kernel and TCG
+    // agree are constant but where the values differ?
+    // I think this works but we'll pointlessly write the
+    // TCG value...
+    return true;
+}
+
 typedef struct Reg {
     uint64_t id;
     int offset;
@@ -164,17 +302,6 @@ typedef struct Reg {
         KVM_REG_ARM | KVM_REG_SIZE_U32 |                     \
         KVM_REG_ARM_CORE | KVM_REG_ARM_CORE_REG(KERNELNAME), \
         offsetof(CPUARMState, QEMUFIELD)                     \
-    }
-
-#define CP15REG(CRN, CRM, OPC1, OPC2, QEMUFIELD) \
-    {                                            \
-        KVM_REG_ARM | KVM_REG_SIZE_U32 |         \
-        (15 << KVM_REG_ARM_COPROC_SHIFT) |       \
-        ((CRN) << KVM_REG_ARM_32_CRN_SHIFT) |    \
-        ((CRM) << KVM_REG_ARM_CRM_SHIFT) |       \
-        ((OPC1) << KVM_REG_ARM_OPC1_SHIFT) |     \
-        ((OPC2) << KVM_REG_ARM_32_OPC2_SHIFT),   \
-        offsetof(CPUARMState, QEMUFIELD)         \
     }
 
 #define VFPSYSREG(R)                                       \
@@ -225,12 +352,6 @@ static const Reg regs[] = {
     COREREG(fiq_regs[7], banked_spsr[5]),
     /* R15 */
     COREREG(usr_regs.uregs[15], regs[15]),
-    /* A non-comprehensive set of cp15 registers.
-     * TODO: drive this from the cp_regs hashtable instead.
-     */
-    CP15REG(1, 0, 0, 0, cp15.c1_sys), /* SCTLR */
-    CP15REG(2, 0, 0, 2, cp15.c2_control), /* TTBCR */
-    CP15REG(3, 0, 0, 0, cp15.c3), /* DACR */
     /* VFP system registers */
     VFPSYSREG(FPSID),
     VFPSYSREG(MVFR1),
@@ -248,7 +369,6 @@ int kvm_arch_put_registers(CPUState *cs, int level)
     int mode, bn;
     int ret, i;
     uint32_t cpsr, fpscr;
-    uint64_t ttbr;
 
     /* Make sure the banked regs are properly set */
     mode = env->uncached_cpsr & CPSR_M;
@@ -282,26 +402,6 @@ int kvm_arch_put_registers(CPUState *cs, int level)
         return ret;
     }
 
-    /* TTBR0: cp15 crm=2 opc1=0 */
-    ttbr = ((uint64_t)env->cp15.c2_base0_hi << 32) | env->cp15.c2_base0;
-    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | (15 << KVM_REG_ARM_COPROC_SHIFT) |
-        (2 << KVM_REG_ARM_CRM_SHIFT) | (0 << KVM_REG_ARM_OPC1_SHIFT);
-    r.addr = (uintptr_t)(&ttbr);
-    ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &r);
-    if (ret) {
-        return ret;
-    }
-
-    /* TTBR1: cp15 crm=2 opc1=1 */
-    ttbr = ((uint64_t)env->cp15.c2_base1_hi << 32) | env->cp15.c2_base1;
-    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | (15 << KVM_REG_ARM_COPROC_SHIFT) |
-        (2 << KVM_REG_ARM_CRM_SHIFT) | (1 << KVM_REG_ARM_OPC1_SHIFT);
-    r.addr = (uintptr_t)(&ttbr);
-    ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &r);
-    if (ret) {
-        return ret;
-    }
-
     /* VFP registers */
     r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | KVM_REG_ARM_VFP;
     for (i = 0; i < 32; i++) {
@@ -318,6 +418,31 @@ int kvm_arch_put_registers(CPUState *cs, int level)
     fpscr = vfp_get_fpscr(env);
     r.addr = (uintptr_t)&fpscr;
     ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &r);
+    if (ret) {
+        return ret;
+    }
+
+    /* Note that we do not call write_cp_state_to_list()
+     * here, so we are only writing the tuple list back to
+     * KVM. This is safe because nothing can change the
+     * CPUARMState cp15 fields (in particular gdb accesses cannot)
+     * and so there are no changes to sync. In fact syncing would
+     * be wrong at this point: for a constant register where TCG and
+     * KVM disagree about its value, the preceding write_list_to_cp_state()
+     * would not have had any effect on the CPUARMState value (since the
+     * register is read-only), and a write_cp_state_to_list() here would
+     * then try to write the TCG value back into KVM -- this would either
+     * fail or incorrectly change the value the guest sees.
+     *
+     * If we ever want to allow the user to modify cp15 registers via
+     * the gdb stub, we would need to be more clever here (for instance
+     * tracking the set of registers kvm_arch_get_registers() successfully
+     * managed to update the CPUARMState with, and only allowing those
+     * to be written back up into the kernel).
+     */
+    if (!write_list_to_kvmstate(cpu, true)) {
+        return EINVAL;
+    }
 
     return ret;
 }
@@ -330,7 +455,6 @@ int kvm_arch_get_registers(CPUState *cs)
     int mode, bn;
     int ret, i;
     uint32_t cpsr, fpscr;
-    uint64_t ttbr;
 
     for (i = 0; i < ARRAY_SIZE(regs); i++) {
         r.id = regs[i].id;
@@ -351,28 +475,6 @@ int kvm_arch_get_registers(CPUState *cs)
     }
     cpsr_write(env, cpsr, 0xffffffff);
 
-    /* TTBR0: cp15 crm=2 opc1=0 */
-    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | (15 << KVM_REG_ARM_COPROC_SHIFT) |
-        (2 << KVM_REG_ARM_CRM_SHIFT) | (0 << KVM_REG_ARM_OPC1_SHIFT);
-    r.addr = (uintptr_t)(&ttbr);
-    ret = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &r);
-    if (ret) {
-        return ret;
-    }
-    env->cp15.c2_base0_hi = ttbr >> 32;
-    env->cp15.c2_base0 = ttbr;
-
-    /* TTBR1: cp15 crm=2 opc1=1 */
-    r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | (15 << KVM_REG_ARM_COPROC_SHIFT) |
-        (2 << KVM_REG_ARM_CRM_SHIFT) | (1 << KVM_REG_ARM_OPC1_SHIFT);
-    r.addr = (uintptr_t)(&ttbr);
-    ret = kvm_vcpu_ioctl(cs, KVM_GET_ONE_REG, &r);
-    if (ret) {
-        return ret;
-    }
-    env->cp15.c2_base1_hi = ttbr >> 32;
-    env->cp15.c2_base1 = ttbr;
-
     /* Make sure the current mode regs are properly set */
     mode = env->uncached_cpsr & CPSR_M;
     bn = bank_number(mode);
@@ -384,15 +486,6 @@ int kvm_arch_get_registers(CPUState *cs)
     env->regs[13] = env->banked_r13[bn];
     env->regs[14] = env->banked_r14[bn];
     env->spsr = env->banked_spsr[bn];
-
-    /* The main GET_ONE_REG loop above set c2_control, but we need to
-     * update some extra cached precomputed values too.
-     * When this is driven from the cp_regs hashtable then this ugliness
-     * can disappear because we'll use the access function which sets
-     * these values automatically.
-     */
-    env->cp15.c2_mask = ~(0xffffffffu >> env->cp15.c2_control);
-    env->cp15.c2_base_mask = ~(0x3fffu >> env->cp15.c2_control);
 
     /* VFP registers */
     r.id = KVM_REG_ARM | KVM_REG_SIZE_U64 | KVM_REG_ARM_VFP;
@@ -413,6 +506,14 @@ int kvm_arch_get_registers(CPUState *cs)
         return ret;
     }
     vfp_set_fpscr(env, fpscr);
+
+    // TODO
+    // check we got 64 bit TTBRs and the c2_control cached fields right
+    if (!write_kvmstate_to_list(cpu, true)) {
+        return EINVAL;
+    }
+    /* Note that it's OK to have registers which aren't in CPUState */
+    write_list_to_cp_state(cpu, false);
 
     return 0;
 }

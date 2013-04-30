@@ -1552,7 +1552,9 @@ static void do_kvm_cpu_synchronize_state(void *arg)
     CPUState *cpu = arg;
 
     if (!cpu->kvm_vcpu_dirty) {
-        kvm_arch_get_registers(cpu);
+        if (kvm_arch_get_registers(cpu)) {
+            abort();
+        }
         cpu->kvm_vcpu_dirty = true;
     }
 }
@@ -1568,13 +1570,17 @@ void kvm_cpu_synchronize_state(CPUArchState *env)
 
 void kvm_cpu_synchronize_post_reset(CPUState *cpu)
 {
-    kvm_arch_put_registers(cpu, KVM_PUT_RESET_STATE);
+    if (kvm_arch_put_registers(cpu, KVM_PUT_RESET_STATE)) {
+        abort();
+    }
     cpu->kvm_vcpu_dirty = false;
 }
 
 void kvm_cpu_synchronize_post_init(CPUState *cpu)
 {
-    kvm_arch_put_registers(cpu, KVM_PUT_FULL_STATE);
+    if (kvm_arch_put_registers(cpu, KVM_PUT_FULL_STATE)) {
+        abort();
+    }
     cpu->kvm_vcpu_dirty = false;
 }
 
@@ -1593,7 +1599,9 @@ int kvm_cpu_exec(CPUArchState *env)
 
     do {
         if (cpu->kvm_vcpu_dirty) {
-            kvm_arch_put_registers(cpu, KVM_PUT_RUNTIME_STATE);
+            if (kvm_arch_put_registers(cpu, KVM_PUT_RUNTIME_STATE)) {
+                abort();
+            }
             cpu->kvm_vcpu_dirty = false;
         }
 

@@ -148,11 +148,53 @@ static const VMStateInfo vmstate_cpsr = {
     .put = put_cpsr,
 };
 
+static void cpu_pre_save(void *opaque)
+{
+    ARMCPU *cpu = opaque;
+
+    if (write_cp_state_to_list(cpu, true)) {
+        /* This should never fail. */
+        abort();
+    }
+
+    memcpy(cpu->cpreg_vmstate_tuples, cpu->cpreg_tuples,
+           cpu->cpreg_tuples_len * sizeof(uint64_t));
+}
+
+static int cpu_post_load(void *opaque, int version_id)
+{
+    ARMCPU *cpu = opaque;
+    int i, v;
+
+    for (i = 0, v = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        if (cpu->cpreg_vmstate_tuples[v] > cpu->cpreg_tuples[i]) {
+            /* register in our list but not incoming : skip it */
+            continue;
+        }
+        if (cpu->cpreg_vmstate_tuples[v] < cpu->cpreg_tuples[i]) {
+            /* register in their list but not ours: fail migration */
+            return 1;
+        }
+        /* matching register, copy the value over */
+        cpu->cpreg_tuples[i+1] = cpu->cpreg_vmstate_tuples[v+1];
+        v += 2;
+    }
+
+    if (!write_list_to_cp_state(cpu, true)) {
+        return 1;
+    }
+
+    return 0;
+
+}
+
 const VMStateDescription vmstate_arm_cpu = {
     .name = "cpu",
-    .version_id = 11,
-    .minimum_version_id = 11,
-    .minimum_version_id_old = 11,
+    .version_id = 12,
+    .minimum_version_id = 12,
+    .minimum_version_id_old = 12,
+    .pre_save = cpu_pre_save,
+    .post_load = cpu_post_load,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(env.regs, ARMCPU, 16),
         {
@@ -169,50 +211,9 @@ const VMStateDescription vmstate_arm_cpu = {
         VMSTATE_UINT32_ARRAY(env.banked_r14, ARMCPU, 6),
         VMSTATE_UINT32_ARRAY(env.usr_regs, ARMCPU, 5),
         VMSTATE_UINT32_ARRAY(env.fiq_regs, ARMCPU, 5),
-        VMSTATE_UINT32(env.cp15.c0_cpuid, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c0_cssel, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c1_sys, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c1_coproc, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c1_xscaleauxcr, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c1_scr, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_base0, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_base0_hi, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_base1, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_base1_hi, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_control, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_mask, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_base_mask, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_data, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c2_insn, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c3, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c5_insn, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c5_data, ARMCPU),
-        VMSTATE_UINT32_ARRAY(env.cp15.c6_region, ARMCPU, 8),
-        VMSTATE_UINT32(env.cp15.c6_insn, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c6_data, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c7_par, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c7_par_hi, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_insn, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_data, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pmcr, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pmcnten, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pmovsr, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pmxevtyper, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pmuserenr, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c9_pminten, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c13_fcse, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c13_context, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c13_tls1, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c13_tls2, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c13_tls3, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_cpar, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_ticonfig, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_i_max, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_i_min, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_threadid, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_power_control, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_diagnostic, ARMCPU),
-        VMSTATE_UINT32(env.cp15.c15_power_diagnostic, ARMCPU),
+        VMSTATE_INT32_LE(cpreg_tuples_len, ARMCPU),
+        VMSTATE_VARRAY_INT32(cpreg_vmstate_tuples, ARMCPU, cpreg_tuples_len,
+                             0, vmstate_info_uint64, uint64_t),
         VMSTATE_UINT32(env.exclusive_addr, ARMCPU),
         VMSTATE_UINT32(env.exclusive_val, ARMCPU),
         VMSTATE_UINT32(env.exclusive_high, ARMCPU),

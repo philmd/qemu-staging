@@ -64,6 +64,186 @@ static int vfp_gdb_set_reg(CPUARMState *env, uint8_t *buf, int reg)
     return 0;
 }
 
+static int read_raw_cp_reg(CPUARMState *env, const ARMCPRegInfo *ri,
+                           uint64_t *v)
+{
+    /* Raw read of a coprocessor register (as needed for migration, etc)
+     * return 0 on success, 1 if the read is impossible for some reason.
+     */
+    if (ri->type & ARM_CP_CONST) {
+        *v = ri->resetvalue;
+    } else if (ri->raw_readfn) {
+        return ri->raw_readfn(env, ri, v);
+    } else if (ri->readfn) {
+        return ri->readfn(env, ri, v);
+    } else {
+        if (ri->type & ARM_CP_64BIT) {
+            *v = CPREG_FIELD64(env, ri);
+        } else {
+            *v = CPREG_FIELD32(env, ri);
+        }
+    }
+    return 0;
+}
+
+static int write_raw_cp_reg(CPUARMState *env, const ARMCPRegInfo *ri,
+                            int64_t v)
+{
+    /* Raw write of a coprocessor register (as needed for migration, etc).
+     * Return 0 on success, 1 if the write is impossible for some reason.
+     * Note that constant registers are treated as write-ignored; the
+     * caller should check for success by whether a readback gives the
+     * value written.
+     */
+    if (ri->type & ARM_CP_CONST) {
+        return 0;
+    } else if (ri->raw_writefn) {
+        return ri->raw_writefn(env, ri, v);
+    } else if (ri->writefn) {
+        return ri->writefn(env, ri, v);
+    } else {
+        if (ri->type & ARM_CP_64BIT) {
+            CPREG_FIELD64(env, ri) = v;
+        } else {
+            CPREG_FIELD32(env, ri) = v;
+        }
+    }
+    return 0;
+}
+
+bool write_cp_state_to_list(ARMCPU *cpu, bool fail_on_error)
+{
+    /* Write the coprocessor state from cpu->env to the (index,value) list. */
+    int i;
+
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        uint32_t regidx = kvm_to_cpreg_id(cpu->cpreg_tuples[i]);
+        const ARMCPRegInfo *ri;
+        uint64_t v;
+        ri = get_arm_cp_reginfo(cpu, regidx);
+        if (!ri) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        if (ri->type & ARM_CP_NO_MIGRATE) {
+            continue;
+        }
+        if (read_raw_cp_reg(&cpu->env, ri, &v)) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        cpu->cpreg_tuples[i + 1] = v;
+    }
+    return true;
+}
+
+bool write_list_to_cp_state(ARMCPU *cpu, bool fail_on_error)
+{
+    int i;
+
+    for (i = 0; i < cpu->cpreg_tuples_len; i += 2) {
+        uint32_t regidx = kvm_to_cpreg_id(cpu->cpreg_tuples[i]);
+        uint64_t v = cpu->cpreg_tuples[i + 1];
+        const ARMCPRegInfo *ri;
+        ri = get_arm_cp_reginfo(cpu, regidx);
+        if (!ri) {
+            if (fail_on_error) {
+                return false;
+            }
+            continue;
+        }
+        if (ri->type & ARM_CP_NO_MIGRATE) {
+            continue;
+        }
+        if (fail_on_error) {
+            /* Write value and confirm it reads back as written
+             * (to catch read-only registers and partially read-only
+             * registers where the incoming migration value doesn't match)
+             */
+            uint64_t readback;
+            if (write_raw_cp_reg(&cpu->env, ri, v)) {
+                return false;
+            }
+            if (read_raw_cp_reg(&cpu->env, ri, &readback) || readback != v) {
+                return false;
+            }
+        } else {
+            /* We don't care about failure, just write the value. */
+            write_raw_cp_reg(&cpu->env, ri, v);
+        }
+    }
+    return true;
+}
+
+static void cp_reg_add_tuple(gpointer key, gpointer opaque)
+{
+    ARMCPU *cpu = opaque;
+    uint64_t regidx;
+    const ARMCPRegInfo *ri;
+
+    regidx = *(uint32_t *)key;
+    ri = get_arm_cp_reginfo(cpu, regidx);
+
+    if (!(ri->type & ARM_CP_NO_MIGRATE)) {
+        cpu->cpreg_tuples[cpu->cpreg_tuples_len] = cpreg_to_kvm_id(regidx);
+        /* The value part of the tuple need not be initialized at this point */
+        cpu->cpreg_tuples_len += 2;
+    }
+}
+
+static void cp_reg_count_tuples(gpointer key, gpointer opaque)
+{
+    ARMCPU *cpu = opaque;
+    uint64_t regidx;
+    const ARMCPRegInfo *ri;
+
+    regidx = *(uint32_t *)key;
+    ri = get_arm_cp_reginfo(cpu, regidx);
+
+    if (!(ri->type & ARM_CP_NO_MIGRATE)) {
+        cpu->cpreg_tuples_len += 2;
+    }
+}
+
+static gint cpreg_key_compare(gconstpointer a, gconstpointer b)
+{
+    uint32_t aidx = *(uint32_t *)a;
+    uint32_t bidx = *(uint32_t *)b;
+
+    return aidx - bidx;
+}
+
+void init_cpreg_tuple_list(ARMCPU *cpu)
+{
+    /* Initialise the cpreg_tuples[] array based on the cp_regs hash.
+     * Note that we require cpreg_tuples[] to be sorted by key ID.
+     */
+    GList *keys;
+    int arraylen;
+
+    keys = g_hash_table_get_keys(cpu->cp_regs);
+    keys = g_list_sort(keys, cpreg_key_compare);
+
+    cpu->cpreg_tuples_len = 0;
+
+    g_list_foreach(keys, cp_reg_count_tuples, cpu);
+
+    arraylen = cpu->cpreg_tuples_len;
+    cpu->cpreg_tuples = g_new(uint64_t, arraylen);
+    cpu->cpreg_vmstate_tuples = g_new(uint64_t, arraylen);
+    cpu->cpreg_tuples_len = 0;
+
+    g_list_foreach(keys, cp_reg_add_tuple, cpu);
+
+    assert(cpu->cpreg_tuples_len == arraylen);
+
+    g_list_free(keys);
+}
+
 static int dacr_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value)
 {
     env->cp15.c3 = value;

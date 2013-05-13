@@ -129,10 +129,13 @@ bool write_cpustate_to_list(ARMCPU *cpu)
         if (ri->type & ARM_CP_NO_MIGRATE) {
             continue;
         }
+        printf("write_cpustate_to_list: reg 0x%" PRIx32 ": ", regidx);
         if (!read_raw_cp_reg(&cpu->env, ri, &v)) {
+            printf("failed\n");
             ok = false;
             continue;
         }
+        printf("0x%" PRIx64 "\n", v);
         cpu->cpreg_values[i] = v;
     }
     return ok;
@@ -161,11 +164,15 @@ bool write_list_to_cpustate(ARMCPU *cpu)
          * (to catch read-only registers and partially read-only
          * registers where the incoming migration value doesn't match)
          */
+        printf("write_list_to_cpustate: reg 0x%" PRIx32 ": 0x%" PRIx64,
+               regidx, v);
         if (!write_raw_cp_reg(&cpu->env, ri, v) ||
             !read_raw_cp_reg(&cpu->env, ri, &readback) ||
             readback != v) {
             ok = false;
+            printf(" failed");
         }
+        printf("\n");
     }
     return ok;
 }

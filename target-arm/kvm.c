@@ -290,7 +290,12 @@ bool write_kvmstate_to_list(ARMCPU *cpu)
             abort();
         }
         if (ret) {
+            printf("write_kvmstate_to_list: reg 0x%" PRIx64 ": failed\n",
+                   regidx);
             ok = false;
+        } else {
+            printf("write_kvmstate_to_list: reg 0x%" PRIx64 ": 0x%" PRIx64 "\n",
+                   regidx, cpu->cpreg_values[i]);
         }
     }
     return ok;
@@ -320,6 +325,8 @@ bool write_list_to_kvmstate(ARMCPU *cpu)
         default:
             abort();
         }
+        printf("write_list_to_kvmstate: reg 0x%" PRIx64 ": 0x%" PRIx64,
+               regidx, cpu->cpreg_values[i]);
         ret = kvm_vcpu_ioctl(cs, KVM_SET_ONE_REG, &r);
         if (ret) {
             /* We might fail for "unknown register" and also for
@@ -327,7 +334,9 @@ bool write_list_to_kvmstate(ARMCPU *cpu)
              * a different value from what it actually contains".
              */
             ok = false;
+            printf(" failed");
         }
+        printf("\n");
     }
     return ok;
 }

@@ -841,12 +841,35 @@ static inline void store_reg_from_load(CPUARMState *env, DisasContext *s,
     }
 }
 
+/* TODO:
+ *  consider macros!
+ *  64 bit will be different
+ *  check if 32-to-64 addresses should be sign or zero extended
+ *    or if we don't care...
+ */
+#if TARGET_LONG_BITS == 32
 static inline TCGv_i32 gen_ld8s(TCGv_i32 addr, int index)
 {
-    TCGv_i32 tmp = tcg_temp_new_i32();
-    tcg_gen_qemu_ld8s(tmp, addr, index);
-    return tmp;
+    TCGv_i32 val = tcg_temp_new_i32();
+    tcg_gen_qemu_ld8s(val, addr, index);
+    return val;
 }
+#else
+static inline TCGv_i32 gen_ld8s(TCGv_i32 addr32, int index)
+{
+    TCGv addr = tcg_temp_new();
+    TCGv val = tcg_temp_new();
+    TCGv_i32 val32;
+    tcg_gen_extu_i32_i64(addr, addr32);
+    tcg_gen_qemu_ld8s(val, addr, index);
+    tcg_temp_free(addr);
+    val32 = tcg_temp_new_i32();
+    tcg_gen_trunc_i64_i32(val32, val);
+    tcg_temp_free(val);
+    return val32;
+}
+#endif
+
 static inline TCGv_i32 gen_ld8u(TCGv_i32 addr, int index)
 {
     TCGv_i32 tmp = tcg_temp_new_i32();
@@ -877,11 +900,27 @@ static inline TCGv_i64 gen_ld64(TCGv_i32 addr, int index)
     tcg_gen_qemu_ld64(tmp, addr, index);
     return tmp;
 }
+
+#if TARGET_LONG_BITS == 32
 static inline void gen_st8(TCGv_i32 val, TCGv_i32 addr, int index)
 {
     tcg_gen_qemu_st8(val, addr, index);
     tcg_temp_free_i32(val);
 }
+#else
+static inline void gen_st8(TCGv_i32 val32, TCGv_i32 addr32, int index)
+{
+    TCGv addr = tcg_temp_new();
+    TCGv val = tcg_temp_new();
+    tcg_gen_extu_i32_i64(addr, addr32);
+    tcg_gen_extu_i32_i64(val, val32);
+    tcg_temp_free_i32(val32);
+    tcg_gen_qemu_st8(val, addr, index);
+    tcg_temp_free(val);
+    tcg_temp_free(addr);
+}
+#endif
+
 static inline void gen_st16(TCGv_i32 val, TCGv_i32 addr, int index)
 {
     tcg_gen_qemu_st16(val, addr, index);

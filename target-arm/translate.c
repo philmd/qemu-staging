@@ -10086,10 +10086,12 @@ void cpu_dump_state(CPUARMState *env, FILE *f, fprintf_function cpu_fprintf,
     int i;
     uint32_t psr;
 
+#if 0
     if (is_a64(env)) {
         cpu_dump_state_a64(env, f, cpu_fprintf, flags);
         return;
     }
+#endif
 
     for(i=0;i<16;i++) {
         cpu_fprintf(f, "R%02d=%08x", i, env->regs[i]);

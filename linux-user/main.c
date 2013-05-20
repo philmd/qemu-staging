@@ -713,6 +713,14 @@ void cpu_loop(CPUARMState *env)
         switch(trapnr) {
         case EXCP_UDEF:
             {
+#ifdef TARGET_AARCH64
+                /* obvious rubbish. aarch64 probably needs its own top loop */
+                info.si_signo = SIGILL;
+                info.si_errno = 0;
+                info.si_code = TARGET_ILL_ILLOPN;
+                info._sifields._sigfault._addr = env->regs[15];
+                queue_signal(env, info.si_signo, &info);
+#else
                 TaskState *ts = env->opaque;
                 uint32_t opcode;
                 int rc;
@@ -780,6 +788,7 @@ void cpu_loop(CPUARMState *env)
                     /* increment PC */
                     env->regs[15] += 4;
                 }
+#endif /* not AArch64 */
             }
             break;
         case EXCP_SWI:

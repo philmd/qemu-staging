@@ -3018,7 +3018,8 @@
 # Since: 1.2.0
 ##
 { 'enum': 'TargetType',
-  'data': [ 'alpha',
+  'data': [ 'aarch64',
+            'alpha',
             'arm',
             'cris',
             'i386',

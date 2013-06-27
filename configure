@@ -4172,7 +4172,6 @@ case "$target_name" in
   cris)
   ;;
   lm32)
-    target_nptl="no"
   ;;
   m68k)
     bflt="yes"
@@ -4201,7 +4200,6 @@ case "$target_name" in
     target_nptl="no"
   ;;
   moxie)
-    target_nptl="no"
   ;;
   or32)
     TARGET_ARCH=openrisc
@@ -4255,7 +4253,6 @@ case "$target_name" in
   ;;
   xtensa|xtensaeb)
     TARGET_ARCH=xtensa
-    target_nptl="no"
   ;;
   *)
     error_exit "Unsupported target CPU"

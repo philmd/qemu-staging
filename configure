@@ -4156,11 +4156,9 @@ TARGET_ABI_DIR=""
 
 case "$target_name" in
   i386)
-    target_nptl="no"
   ;;
   x86_64)
     TARGET_BASE_ARCH=i386
-    target_nptl="no"
   ;;
   alpha)
   ;;

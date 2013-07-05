@@ -28,6 +28,9 @@ static inline void cpu_clone_regs(CPUX86State *env, target_ulong newsp)
     env->regs[R_EAX] = 0;
 }
 
-/* TODO: need to implement cpu_set_tls() */
+static inline void cpu_set_tls(CPUX86State *env, target_ulong newtls)
+{
+    // FIXME actually implement!
+}
 
 #endif

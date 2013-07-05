@@ -4176,7 +4176,6 @@ case "$target_name" in
   m68k)
     bflt="yes"
     gdb_xml_files="cf-core.xml cf-fp.xml"
-    target_nptl="no"
   ;;
   microblaze|microblazeel)
     TARGET_ARCH=microblaze

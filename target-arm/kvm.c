@@ -36,12 +36,216 @@ const KVMCapabilityInfo kvm_arch_required_capabilities[] = {
     KVM_CAP_LAST_INFO
 };
 
+#define TYPE_ARM_HOST_CPU "host-" TYPE_ARM_CPU
+#define ARM_HOST_CPU_CLASS(klass) \
+    OBJECT_CLASS_CHECK(ARMHostCPUClass, (klass), TYPE_ARM_HOST_CPU)
+#define ARM_HOST_CPU_GET_CLASS(obj) \
+    OBJECT_GET_CLASS(ARMHostCPUClass, (obj), TYPE_ARM_HOST_CPU)
+
+typedef struct ARMHostCPUClass {
+    /*< private >*/
+    ARMCPUClass parent_class;
+    /*< public >*/
+
+    uint64_t features;
+    uint32_t target;
+} ARMHostCPUClass;
+
+static void kvm_arm_host_cpu_initfn(Object *obj)
+{
+    ARMHostCPUClass *ahcc = ARM_HOST_CPU_GET_CLASS(obj);
+    ARMCPU *cpu = ARM_CPU(obj);
+    CPUARMState *env = &cpu->env;
+
+    env->features = ahcc->features;
+}
+
+static inline void set_feature(uint64_t *features, int feature)
+{
+    *features |= 1ULL << feature;
+}
+
+static bool get_host_cpu_features(ARMHostCPUClass *ahcc)
+{
+    /* Identify the feature bits corresponding to the host CPU, and
+     * fill out the ARMHostCPUClass fields accordingly. To do this
+     * we have to create a scratch VM, create a single CPU inside it,
+     * and then query that CPU for the relevant ID registers.
+     */
+    int i, ret, kvmfd = -1, vmfd = -1, cpufd = -1;
+    uint32_t midr, id_pfr0, id_isar0, mvfr1;
+    uint64_t features = 0;
+    struct kvm_vcpu_init init;
+    struct kvm_one_reg idregs[] = {
+        {
+            .id = KVM_REG_ARM | KVM_REG_SIZE_U32
+            | ENCODE_CP_REG(15, 0, 0, 0, 0, 0),
+            .addr = (uintptr_t)&midr,
+        },
+        {
+            .id = KVM_REG_ARM | KVM_REG_SIZE_U32
+            | ENCODE_CP_REG(15, 0, 0, 1, 0, 0),
+            .addr = (uintptr_t)&id_pfr0,
+        },
+        {
+            .id = KVM_REG_ARM | KVM_REG_SIZE_U32
+            | ENCODE_CP_REG(15, 0, 0, 2, 0, 0),
+            .addr = (uintptr_t)&id_isar0,
+        },
+        {
+            .id = KVM_REG_ARM | KVM_REG_SIZE_U32
+            | KVM_REG_ARM_VFP | KVM_REG_ARM_VFP_MVFR1,
+            .addr = (uintptr_t)&mvfr1,
+        },
+    };
+
+    kvmfd = qemu_open("/dev/kvm", O_RDWR);
+    if (kvmfd < 0) {
+        goto err;
+    }
+    vmfd = ioctl(kvmfd, KVM_CREATE_VM, 0);
+    if (vmfd < 0) {
+        goto err;
+    }
+    cpufd = ioctl(vmfd, KVM_CREATE_VCPU, 0);
+    if (cpufd < 0) {
+        goto err;
+    }
+
+    // TODO: this ifdef should be removed, and instead we should
+    // have a kernel header update which defines the new ioctl.
+#if 0
+    ret = ioctl(cpufd, KVM_ARM_PREFERRED_TARGET, &init);
+#else
+    ret = -ENOTSUP;
+#endif
+    if (ret >= 0) {
+        ret = ioctl(cpufd, KVM_ARM_VCPU_INIT, &init);
+        if (ret < 0) {
+            goto err;
+        }
+    } else {
+        /* Old kernel which doesn't know about the
+         * PREFERRED_TARGET ioctl: we know it will only support
+         * creating one kind of guest CPU which is its preferred
+         * CPU type.
+         */
+        static const uint32_t cpus_to_try[] = {
+            KVM_ARM_TARGET_CORTEX_A15,
+        };
+
+        for (i = 0; i < ARRAY_SIZE(cpus_to_try); i++) {
+            init.target = cpus_to_try[i];
+            memset(init.features, 0, sizeof(init.features));
+            ret = ioctl(cpufd, KVM_ARM_VCPU_INIT, &init);
+            if (ret >= 0) {
+                break;
+            }
+        }
+        if (ret < 0) {
+            goto err;
+        }
+    }
+
+    ahcc->target = init.target;
+
+    for (i = 0; i < ARRAY_SIZE(idregs); i++) {
+        ret = ioctl(cpufd, KVM_GET_ONE_REG, &idregs[i]);
+        if (ret) {
+            goto err;
+        }
+    }
+    close(cpufd);
+    close(vmfd);
+    close(kvmfd);
+
+    /* Now we've retrieved all the register information we can
+     * set the feature bits based on the ID register fields.
+     * We can assume any KVM supporting CPU is at least a v7
+     * with VFPv3, LPAE and the generic timers; this in turn implies
+     * most of the other feature bits, but a few must be tested.
+     */
+    set_feature(&features, ARM_FEATURE_V7);
+    set_feature(&features, ARM_FEATURE_VFP3);
+    set_feature(&features, ARM_FEATURE_LPAE);
+    set_feature(&features, ARM_FEATURE_GENERIC_TIMER);
+
+    switch (extract32(id_isar0, 24, 4)) {
+    case 1:
+        set_feature(&features, ARM_FEATURE_THUMB_DIV);
+        break;
+    case 2:
+        set_feature(&features, ARM_FEATURE_ARM_DIV);
+        set_feature(&features, ARM_FEATURE_THUMB_DIV);
+        break;
+    default:
+        break;
+    }
+
+    if (extract32(id_pfr0, 12, 4) == 1) {
+        set_feature(&features, ARM_FEATURE_THUMB2EE);
+    }
+    if (extract32(mvfr1, 20, 4) == 1) {
+        set_feature(&features, ARM_FEATURE_VFP_FP16);
+    }
+    if (extract32(mvfr1, 12, 4) == 1) {
+        set_feature(&features, ARM_FEATURE_NEON);
+    }
+    if (extract32(mvfr1, 28, 4) == 1) {
+        /* FMAC support implies VFPv4 */
+        set_feature(&features, ARM_FEATURE_VFP4);
+    }
+
+    ahcc->features = features;
+
+    return true;
+
+err:
+    if (cpufd >= 0) {
+        close(cpufd);
+    }
+    if (vmfd >= 0) {
+        close(vmfd);
+    }
+    if (kvmfd >= 0) {
+        close(kvmfd);
+    }
+
+    return false;
+}
+
+static void kvm_arm_host_cpu_class_init(ObjectClass *oc, void *data)
+{
+    ARMHostCPUClass *ahcc = ARM_HOST_CPU_CLASS(oc);
+
+    /* All we really need to set up for the 'host' CPU
+     * is the feature bits -- we rely on the fact that the
+     * various ID register values in ARMCPU are only used for
+     * TCG CPUs.
+     */
+    if (!get_host_cpu_features(ahcc)) {
+        fprintf(stderr, "Failed to retrieve host CPU features!\n");
+        abort();
+    }
+}
+
+static const TypeInfo host_arm_cpu_type_info = {
+    .name = TYPE_ARM_HOST_CPU,
+    .parent = TYPE_ARM_CPU,
+    .instance_init = kvm_arm_host_cpu_initfn,
+    .class_init = kvm_arm_host_cpu_class_init,
+    .class_size = sizeof(ARMHostCPUClass),
+};
+
 int kvm_arch_init(KVMState *s)
 {
     /* For ARM interrupt delivery is always asynchronous,
      * whether we are using an in-kernel VGIC or not.
      */
     kvm_async_interrupts_allowed = true;
+
+    type_register_static(&host_arm_cpu_type_info);
+
     return 0;
 }
 
@@ -85,6 +289,13 @@ static bool kvm_arm_get_init_args(ARMCPU *cpu, struct kvm_vcpu_init *init)
     };
 
     memset(init->features, 0, sizeof(init->features));
+
+    if (object_dynamic_cast(obj, TYPE_ARM_HOST_CPU)) {
+        ARMHostCPUClass *ahcc = ARM_HOST_CPU_GET_CLASS(obj);
+
+        init->target = ahcc->target;
+        return true;
+    }
 
     for (i = 0; i < ARRAY_SIZE(kvm_cpus); i++) {
         if (object_dynamic_cast(obj, kvm_cpus[i].name)) {

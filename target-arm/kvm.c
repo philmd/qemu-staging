@@ -70,6 +70,32 @@ static int compare_u64(const void *a, const void *b)
     return *(uint64_t *)a - *(uint64_t *)b;
 }
 
+static bool kvm_arm_get_init_args(ARMCPU *cpu, struct kvm_vcpu_init *init)
+{
+    /* Fill in the kvm_vcpu_init struct appropriately for this CPU.
+     * Return true on success, false on failure (ie unsupported CPU).
+     */
+    Object *obj = OBJECT(cpu);
+    int i;
+    static const struct {
+        const char *name;
+        uint32_t target;
+    } kvm_cpus[] = {
+        { "cortex-a15-" TYPE_ARM_CPU, KVM_ARM_TARGET_CORTEX_A15 },
+    };
+
+    memset(init->features, 0, sizeof(init->features));
+
+    for (i = 0; i < ARRAY_SIZE(kvm_cpus); i++) {
+        if (object_dynamic_cast(obj, kvm_cpus[i].name)) {
+            init->target = kvm_cpus[i].target;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 int kvm_arch_init_vcpu(CPUState *cs)
 {
     struct kvm_vcpu_init init;
@@ -80,8 +106,10 @@ int kvm_arch_init_vcpu(CPUState *cs)
     struct kvm_reg_list *rlp;
     ARMCPU *cpu = ARM_CPU(cs);
 
-    init.target = KVM_ARM_TARGET_CORTEX_A15;
-    memset(init.features, 0, sizeof(init.features));
+    if (!kvm_arm_get_init_args(cpu, &init)) {
+        fprintf(stderr, "KVM is not supported for this guest CPU type\n");
+        return -EINVAL;
+    }
     ret = kvm_vcpu_ioctl(cs, KVM_ARM_VCPU_INIT, &init);
     if (ret) {
         return ret;

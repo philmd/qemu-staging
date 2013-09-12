@@ -70,6 +70,103 @@ static inline void set_feature(uint64_t *features, int feature)
     *features |= 1ULL << feature;
 }
 
+#ifdef TARGET_AARCH64
+static bool get_host_cpu_features(ARMHostCPUClass *ahcc)
+{
+    /* Identify the feature bits corresponding to the host CPU, and
+     * fill out the ARMHostCPUClass fields accordingly. To do this
+     * we have to create a scratch VM, create a single CPU inside it,
+     * and then query that CPU for the relevant ID registers.
+     * For AArch64 we currently don't care about ID registers at
+     * all; we just want to know the CPU type.
+     */
+    int i, ret, kvmfd = -1, vmfd = -1, cpufd = -1;
+    uint64_t features = 0;
+    struct kvm_vcpu_init init;
+
+    kvmfd = qemu_open("/dev/kvm", O_RDWR);
+    if (kvmfd < 0) {
+        goto err;
+    }
+    vmfd = ioctl(kvmfd, KVM_CREATE_VM, 0);
+    if (vmfd < 0) {
+        goto err;
+    }
+    cpufd = ioctl(vmfd, KVM_CREATE_VCPU, 0);
+    if (cpufd < 0) {
+        goto err;
+    }
+
+    // TODO: this ifdef should be removed, and instead we should
+    // have a kernel header update which defines the new ioctl.
+#if 0
+    ret = ioctl(cpufd, KVM_ARM_PREFERRED_TARGET, &init);
+#else
+    ret = -ENOTSUP;
+#endif
+    if (ret >= 0) {
+        ret = ioctl(cpufd, KVM_ARM_VCPU_INIT, &init);
+        if (ret < 0) {
+            goto err;
+        }
+    } else {
+        /* Old kernel which doesn't know about the
+         * PREFERRED_TARGET ioctl: we know it will only support
+         * creating one kind of guest CPU which is its preferred
+         * CPU type. Fortunately these old kernels support only
+         * a very limited number of CPUs.
+         */
+        static const uint32_t cpus_to_try[] = {
+            KVM_ARM_TARGET_AEM_V8,
+            KVM_ARM_TARGET_FOUNDATION_V8,
+            KVM_ARM_TARGET_CORTEX_A57,
+        };
+
+        for (i = 0; i < ARRAY_SIZE(cpus_to_try); i++) {
+            init.target = cpus_to_try[i];
+            memset(init.features, 0, sizeof(init.features));
+            ret = ioctl(cpufd, KVM_ARM_VCPU_INIT, &init);
+            if (ret >= 0) {
+                break;
+            }
+        }
+        if (ret < 0) {
+            goto err;
+        }
+    }
+
+    ahcc->target = init.target;
+
+    close(cpufd);
+    close(vmfd);
+    close(kvmfd);
+
+    /* We can assume any KVM supporting CPU is at least a v8
+     * with VFPv4+Neon; this in turn implies most of the other
+     * feature bits.
+     */
+    set_feature(&features, ARM_FEATURE_V8);
+    set_feature(&features, ARM_FEATURE_VFP4);
+    set_feature(&features, ARM_FEATURE_NEON);
+
+    ahcc->features = features;
+
+    return true;
+
+err:
+    if (cpufd >= 0) {
+        close(cpufd);
+    }
+    if (vmfd >= 0) {
+        close(vmfd);
+    }
+    if (kvmfd >= 0) {
+        close(kvmfd);
+    }
+
+    return false;
+}
+#else
 static bool get_host_cpu_features(ARMHostCPUClass *ahcc)
 {
     /* Identify the feature bits corresponding to the host CPU, and
@@ -218,6 +315,7 @@ err:
 
     return false;
 }
+#endif
 
 static void kvm_arm_host_cpu_class_init(ObjectClass *oc, void *data)
 {
@@ -236,7 +334,11 @@ static void kvm_arm_host_cpu_class_init(ObjectClass *oc, void *data)
 
 static const TypeInfo host_arm_cpu_type_info = {
     .name = TYPE_ARM_HOST_CPU,
+#ifdef TARGET_AARCH64
+    .parent = TYPE_AARCH64_CPU,
+#else
     .parent = TYPE_ARM_CPU,
+#endif
     .instance_init = kvm_arm_host_cpu_initfn,
     .class_init = kvm_arm_host_cpu_class_init,
     .class_size = sizeof(ARMHostCPUClass),
@@ -260,28 +362,52 @@ unsigned long kvm_arch_vcpu_id(CPUState *cpu)
 }
 
 #ifdef TARGET_AARCH64
-static uint32_t kvm_arm_targets[KVM_ARM_NUM_TARGETS] = {
-    KVM_ARM_TARGET_AEM_V8,
-    KVM_ARM_TARGET_FOUNDATION_V8,
-    KVM_ARM_TARGET_CORTEX_A57
-};
+static bool kvm_arm_get_init_args(ARMCPU *cpu, struct kvm_vcpu_init *init)
+{
+    /* Fill in the kvm_vcpu_init struct appropriately for this CPU.
+     * Return true on success, false on failure (ie unsupported CPU).
+     */
+    Object *obj = OBJECT(cpu);
+    int i;
+    static const struct {
+        const char *name;
+        uint32_t target;
+    } kvm_cpus[] = {
+        /* Fill in as we add real QEMU support for KVM CPU types */
+    };
+
+    memset(init->features, 0, sizeof(init->features));
+
+    if (object_dynamic_cast(obj, TYPE_ARM_HOST_CPU)) {
+        ARMHostCPUClass *ahcc = ARM_HOST_CPU_GET_CLASS(obj);
+
+        init->target = ahcc->target;
+        return true;
+    }
+
+    for (i = 0; i < ARRAY_SIZE(kvm_cpus); i++) {
+        if (object_dynamic_cast(obj, kvm_cpus[i].name)) {
+            init->target = kvm_cpus[i].target;
+            return true;
+        }
+    }
+
+    return false;
+}
 
 int kvm_arch_init_vcpu(CPUState *cs)
 {
+    ARMCPU *cpu = ARM_CPU(cs);
     struct kvm_vcpu_init init;
-    int ret, i;
+    int ret;
 
-    memset(init.features, 0, sizeof(init.features));
-    /* Find an appropriate target CPU type.
-     * KVM does not provide means to detect the host CPU type on aarch64,
-     * and simply refuses to initialize, if the CPU type mis-matches;
-     * so we try each possible CPU type on aarch64 before giving up! */
-    for (i = 0; i < KVM_ARM_NUM_TARGETS; ++i) {
-        init.target = kvm_arm_targets[i];
-        ret = kvm_vcpu_ioctl(cs, KVM_ARM_VCPU_INIT, &init);
-        if (!ret)
-            break;
+    if (!kvm_arm_get_init_args(cpu, &init)) {
+        fprintf(stderr, "KVM is not supported for this guest CPU type\n");
+        return -EINVAL;
     }
+    ret = kvm_vcpu_ioctl(cs, KVM_ARM_VCPU_INIT, &init);
+
+    /* TODO : support for save/restore/reset of system regs via tuple list */
 
     return ret;
 }

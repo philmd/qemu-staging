@@ -120,8 +120,13 @@ static VirtBoardInfo machines[] = {
     },
     {
         .cpu_model = "host",
+#ifdef TARGET_AARCH64
+        /* For 32 bit KVM treat 'host' like A15 for its private peripherals */
+        .cpu_compatible = "arm,arm-v8",
+#else
         /* For 32 bit KVM treat 'host' like A15 for its private peripherals */
         .cpu_compatible = "arm,cortex-a15",
+#endif
         .qdevname = "a15mpcore_priv",
         .gic_compatible = "arm,cortex-a15-gic",
         .memmap = a15memmap,

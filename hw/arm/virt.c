@@ -118,6 +118,15 @@ static VirtBoardInfo machines[] = {
         .memmap = a15memmap,
         .irqmap = a15irqmap,
     },
+    {
+        .cpu_model = "host",
+        /* For 32 bit KVM treat 'host' like A15 for its private peripherals */
+        .cpu_compatible = "arm,cortex-a15",
+        .qdevname = "a15mpcore_priv",
+        .gic_compatible = "arm,cortex-a15-gic",
+        .memmap = a15memmap,
+        .irqmap = a15irqmap,
+    },
 };
 
 static VirtBoardInfo *find_machine_info(const char *cpu)

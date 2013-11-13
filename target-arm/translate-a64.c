@@ -124,6 +124,62 @@ static void unallocated_encoding(DisasContext *s)
         unallocated_encoding(s);                                        \
     } while (0);
 
+static void free_tmp_a64(DisasContext *s)
+{
+    int i;
+    for (i = 0; i < s->tmp_a64_count; i++) {
+        tcg_temp_free_i64(s->tmp_a64[i]);
+    }
+    s->tmp_a64_count = 0;
+}
+
+static TCGv_i64 new_tmp_a64_zero(DisasContext *s)
+{
+    assert(s->tmp_a64_count < TMP_A64_MAX);
+    return s->tmp_a64[s->tmp_a64_count++] = tcg_const_i64(0);
+}
+
+static TCGv_i64 cpu_reg(DisasContext *s, int reg)
+{
+    if (reg == 31) {
+        return new_tmp_a64_zero(s);
+    } else {
+        return cpu_X[reg];
+    }
+}
+
+static inline bool use_goto_tb(DisasContext *s, int n, uint64_t dest)
+{
+    /* No direct tb linking with singlestep or deterministic io */
+    if (s->singlestep_enabled || (s->tb->cflags & CF_LAST_IO)) {
+        return false;
+    }
+
+    /* Only link tbs from inside the same guest page */
+    if ((s->tb->pc & TARGET_PAGE_MASK) != (dest & TARGET_PAGE_MASK)) {
+        return false;
+    }
+
+    return true;
+}
+
+static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
+{
+    TranslationBlock *tb;
+
+    tb = s->tb;
+    if (use_goto_tb(s, n, dest)) {
+        tcg_gen_goto_tb(n);
+        gen_a64_set_pc_im(dest);
+        tcg_gen_exit_tb((tcg_target_long)tb + n);
+        s->is_jmp = DISAS_TB_JUMP;
+    } else {
+        gen_a64_set_pc_im(dest);
+        tcg_gen_exit_tb(0);
+        s->is_jmp = DISAS_JUMP;
+    }
+}
+
 /*
  * the instruction disassembly implemented here matches
  * the instruction encoding classifications in chapter 3 (C3)
@@ -133,7 +189,15 @@ static void unallocated_encoding(DisasContext *s)
 /* Unconditional branch (immediate) */
 static void disas_uncond_b_imm(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    uint64_t addr = s->pc + sextract32(insn, 0, 26) * 4 - 4;
+
+    if (insn & (1 << 31)) {
+        /* C5.6.26 BL Branch with link */
+        tcg_gen_movi_i64(cpu_reg(s, 30), s->pc);
+    }
+
+    /* C5.6.20 B Branch / C5.6.26 BL Branch with link */
+    gen_goto_tb(s, 0, addr);
 }
 
 /* Compare & branch (immediate) */
@@ -614,6 +678,9 @@ static void disas_a64_insn(CPUARMState *env, DisasContext *s)
         break;
     }
 
+    /* if we allocated any temporaries, free them here */
+    free_tmp_a64(s);
+
     if (unlikely(s->singlestep_enabled) && (s->is_jmp == DISAS_TB_JUMP)) {
         /* go through the main loop for single step */
         s->is_jmp = DISAS_JUMP;
@@ -657,6 +724,7 @@ void gen_intermediate_code_internal_a64(ARMCPU *cpu,
     dc->vfp_enabled = 0;
     dc->vec_len = 0;
     dc->vec_stride = 0;
+    dc->tmp_a64_count = 0;
 
     next_page_start = (pc_start & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
     lj = -1;

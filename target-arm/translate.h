@@ -24,6 +24,12 @@ typedef struct DisasContext {
     int vec_len;
     int vec_stride;
     int aarch64;
+#ifdef TARGET_AARCH64
+#define TMP_A64_MAX 16
+    int tmp_a64_count;
+    TCGv_i64 tmp_a64[TMP_A64_MAX];
+#endif /* TARGET_AARCH64 */
+
 } DisasContext;
 
 extern TCGv_ptr cpu_env;

@@ -124,12 +124,12 @@ static void unallocated_encoding(DisasContext *s)
     gen_exception_insn(s, 4, EXCP_UDEF);
 }
 
-#define unsupported_encoding(s, insn)                        \
-    do {                                                     \
-        qemu_log_mask(LOG_UNIMP,                                        \
-                      "%s:%d: unsupported instruction encoding 0x%08x", \
-                      __FILE__, __LINE__, insn);                        \
-        unallocated_encoding(s);                                        \
+#define unsupported_encoding(s, insn)                                     \
+    do {                                                                  \
+        qemu_log_mask(LOG_UNIMP,                                          \
+                      "%s:%d: unsupported instruction encoding 0x%08x\n", \
+                      __FILE__, __LINE__, insn);                          \
+        unallocated_encoding(s);                                          \
     } while (0);
 
 static void free_tmp_a64(DisasContext *s)

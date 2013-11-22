@@ -127,8 +127,8 @@ static void unallocated_encoding(DisasContext *s)
 #define unsupported_encoding(s, insn)                                     \
     do {                                                                  \
         qemu_log_mask(LOG_UNIMP,                                          \
-                      "%s:%d: unsupported instruction encoding 0x%08x\n", \
-                      __FILE__, __LINE__, insn);                          \
+                      "%s:%d: unsupported instruction encoding 0x%08x at pc=%lx\n", \
+                      __FILE__, __LINE__, insn, s->pc - 4);               \
         unallocated_encoding(s);                                          \
     } while (0);
 

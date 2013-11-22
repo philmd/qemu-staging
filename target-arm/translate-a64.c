@@ -1327,10 +1327,52 @@ static void disas_logic_imm(DisasContext *s, uint32_t insn)
     }
 }
 
-/* Move wide (immediate) */
+/* C3.4.5 Move wide (immediate)
+
+   31 30 29 28         23 22 21 20             5 4    0
+  +--+-----+-------------+-----+----------------+------+
+  |sf| opc | 1 0 0 1 0 1 |  hw |  imm16         |  Rd  |
+  +--+-----+-------------+-----+----------------+------+
+
+  sf: 0 -> 32 bit, 1 -> 64 bit
+  opc: 00 -> N, 01 -> Z, 11 -> K
+ */
 static void disas_movw_imm(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int rd = extract32(insn, 0, 5);
+    uint64_t imm = extract32(insn, 5, 16);
+    int is_32bit = !extract32(insn, 31, 1);
+    int is_k = extract32(insn, 29, 1);
+    int is_n = !extract32(insn, 30, 1);
+    int pos = extract32(insn, 21, 2) << 4;
+    TCGv_i64 tcg_rd = cpu_reg(s, rd);
+    TCGv_i64 tcg_imm;
+
+    if (extract32(insn, 23, 1) != 1) {
+        /* reserved */
+        unallocated_encoding(s);
+        return;
+    }
+
+    if (is_k && is_n) {
+        unallocated_encoding(s);
+        return;
+    }
+
+    if (is_k) {
+        tcg_imm = tcg_const_i64(imm);
+        tcg_gen_deposit_i64(tcg_rd, tcg_rd, tcg_imm, pos, 16);
+        tcg_temp_free_i64(tcg_imm);
+    } else {
+        imm <<= pos;
+        if (is_n) {
+            imm = ~imm;
+        }
+        if (is_32bit) {
+            imm &= 0xffffffffu;
+        }
+        tcg_gen_movi_i64(tcg_rd, imm);
+    }
 }
 
 /* C3.4.2 Bitfield */

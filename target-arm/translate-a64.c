@@ -815,10 +815,42 @@ static void disas_bitfield(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
-/* Extract */
+/* C3.4.3 Extract */
 static void disas_extract(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    /*
+     * 31 30 29 28 27 26 25 24 23 22 21 20  16 15   10 9  5 4  0
+     * sf [op21] 1  0  0  1  1  1  N o0   Rm     imm    Rn   Rd
+     *    [0  0]                     [0]
+     */
+    unsigned int sf, n, rm, imm, rn, rd, bitsize;
+    sf = insn & (1 << 31) ? 1 : 0;
+    n = insn & (1 << 22) ? 1 : 0;
+    rm = extract32(insn, 16, 5);
+    imm = extract32(insn, 10, 6);
+    rn = extract32(insn, 5, 5);
+    rd = extract32(insn, 0, 5);
+    bitsize = sf ? 64 : 32;
+
+    if (sf != n || (insn & (0x3 << 29)) || (insn & (1 << 21))
+        || imm >= bitsize)
+    {
+        unallocated_encoding(s);
+    } else {
+        TCGv_i64 tcg_tmp, tcg_rd;
+        tcg_tmp = tcg_temp_new_i64();
+        tcg_rd = cpu_reg(s, rd);
+
+        read_cpu_reg(s, tcg_tmp, rm, sf);
+        tcg_gen_shri_i64(tcg_rd, tcg_tmp, imm);
+        tcg_gen_shli_i64(tcg_tmp, cpu_reg(s, rn), bitsize - imm);
+        tcg_gen_or_i64(tcg_rd, tcg_rd, tcg_tmp);
+
+        tcg_temp_free_i64(tcg_tmp);
+        if (!sf) {
+            tcg_gen_ext32u_i64(tcg_rd, tcg_rd);
+        }
+    }
 }
 
 /* C3.4 Data processing - immediate */

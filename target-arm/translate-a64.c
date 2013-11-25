@@ -374,10 +374,31 @@ static void disas_test_b_imm(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
-/* Conditional branch (immediate) */
+/* C3.2.2 / C5.6.19 Conditional branch (immediate) */
 static void disas_cond_b_imm(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    /*
+     * 31 30 29 28 27 26 25 |24| 23    5| 4|  3    0
+     *  0  1  0  1  0  1  0 | 0|  imm19 | 0|   cond
+     *                      |o1|        |o0|
+     */
+    unsigned int cond; uint64_t addr;
+    if ((insn & (1 << 4)) || (insn & (1 << 24))) {
+        unallocated_encoding(s);
+        return;
+    }
+    addr = s->pc + sextract32(insn, 5, 19) * 4 - 4;
+    cond = extract32(insn, 0, 4);
+
+    if (cond < 0x0e) { /* only if condition is not "always" */
+        int label_nomatch = gen_new_label();
+        arm_gen_test_cc(cond ^ 1, label_nomatch);
+        gen_goto_tb(s, 0, addr);
+        gen_set_label(label_nomatch);
+        gen_goto_tb(s, 1, s->pc);
+    } else { /* generate unconditional branch */
+        gen_goto_tb(s, 0, addr);
+    }
 }
 
 /* C5.6.68 HINT */

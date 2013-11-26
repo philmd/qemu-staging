@@ -41,3 +41,8 @@ int64_t HELPER(sdiv64)(int64_t num, int64_t den)
         return LLONG_MIN;
     return num / den;
 }
+
+uint64_t HELPER(clz64)(uint64_t x)
+{
+    return clz64(x);
+}

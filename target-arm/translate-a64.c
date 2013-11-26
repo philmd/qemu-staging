@@ -1121,6 +1121,76 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
     }
 }
 
+
+/*
+  C3.3.10 Load/store (register offset)
+
+  31 30 29   27  26 25 24 23 22 21  20  16 15 13 12 11 10 9  4 4  0
+  +----+-------+---+-----+-----+---+------+-----+--+-----+----+----+
+  |size| 1 1 1 | V | 0 0 | opc | 1 |  Rm  | opt | S| 1 0 | Rn | Rt |
+  +----+-------+---+-----+-----+---+------+-----+--+-----+----+----+
+
+  size: 00 -> 8 bit, 01 -> 16 bit, 10 -> 32 bit, 11 -> 64bit
+  opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
+  V: vector/simd
+  opt: 00x/10x -> RESERVED, x10 -> index by W, x11 -> index by X
+  opt: XXX manual is confusing, don't think extend used in this form XXX
+  S: index shift amount (unused or #0? makes no sense)
+  Rt: register to transfer into/out of
+  Rn: address register or SP for base
+  Rm: offset register or ZR for offset
+*/
+static void handle_ldst_reg_roffset(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int rm = extract32(insn, 16, 5);
+    int opc = extract32(insn, 22, 2);
+    int opt = extract32(insn, 13, 3);
+    int size = extract32(insn, 30, 2);
+    bool is_signed = false;
+    bool is_store = false;
+
+    TCGv_i64 tcg_rt = cpu_reg(s, rt);
+    TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
+    TCGv_i64 tcg_rm = cpu_reg(s, rm);
+    TCGv_i64 tcg_addr;
+
+    g_assert(extract32(insn, 10, 2)==2); /* only roffset */
+    g_assert(extract32(insn, 26, 1)==0); /* not vector */
+    g_assert((opt==2 || opt==3));        /* only two opt forms */
+
+    if (size == 2 &&  opc == 2) {
+        /* pre-fetch */
+        return;
+    }
+
+    switch (opc) {
+    case 0:
+        is_store = true;
+        break;
+    case 1:
+        is_store = false;
+        is_signed = false;
+        break;
+    case 2: case 3:
+        is_store = false;
+        is_signed = true;
+        break;
+    }
+
+    tcg_addr = tcg_temp_new_i64();
+    tcg_gen_mov_i64(tcg_addr, tcg_rn);
+    // XXX should I be scaling this?
+    tcg_gen_add_i64(tcg_addr, tcg_addr, tcg_rm);
+    if (is_store) {
+        do_gpr_st(s, tcg_rt, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+    }
+    tcg_temp_free_i64(tcg_addr);
+}
+
 /*
 C3.3.13 Load/store (unsigned immediate - non vector)
 
@@ -1176,7 +1246,11 @@ static void disas_ldst_reg(DisasContext *s, uint32_t insn)
     } else {
         switch (extract32(insn, 24, 2)) {
         case 0:
-            unsupported_encoding(s, insn);
+            if (extract32(insn, 21,1)) {
+                handle_ldst_reg_roffset(s, insn);
+            } else {
+                unsupported_encoding(s, insn);
+            }
             break;
         case 1:
             handle_ldst_reg_unsigned_imm(s, insn);

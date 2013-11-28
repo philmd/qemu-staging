@@ -219,8 +219,10 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
     }
 }
 
-/* this matches the ARM target semantic for flag variables,
+/* C4.3.10 NZCV, Condition Flags
+   this matches the ARM target semantic for flag variables,
    but it's not optimal for Aarch64. */
+/* on !sf result must be passed clean (zero-ext) */
 static inline void gen_logic_CC(int sf, TCGv_i64 result)
 {
     if (sf) {
@@ -237,6 +239,87 @@ static inline void gen_logic_CC(int sf, TCGv_i64 result)
     }
     tcg_gen_movi_i32(cpu_CF, 0);
     tcg_gen_movi_i32(cpu_VF, 0);
+}
+
+static void gen_arith_CC_64(TCGv_i64 result,
+                            TCGv_i64 x, TCGv_i64 y, TCGv_i64 carry_in)
+{
+    TCGv_i64 tmp, carry_out;
+    tmp = tcg_const_i64(0);
+    carry_out = tcg_temp_new_i64();
+
+    /* calculate [C:result] = x + y + carry_in */
+    tcg_gen_add2_i64(result, carry_out, x, tmp, carry_in, tmp);
+    tcg_gen_add2_i64(result, carry_out, result, carry_out, y, tmp);
+    tcg_gen_trunc_i64_i32(cpu_CF, carry_out);
+
+    /* calculate NZ */
+    tcg_gen_setcondi_i64(TCG_COND_NE, tmp, result, 0);
+    tcg_gen_trunc_i64_i32(cpu_ZF, tmp);
+    tcg_gen_shri_i64(tmp, result, 32);
+    tcg_gen_trunc_i64_i32(cpu_NF, tmp);
+
+    /* calculate V */
+    tcg_gen_xor_i64(carry_out, result, x);
+    tcg_gen_xor_i64(tmp, x, y);
+    tcg_gen_andc_i64(carry_out, carry_out, tmp);
+    tcg_gen_shri_i64(carry_out, carry_out, 32);
+    tcg_gen_trunc_i64_i32(cpu_VF, carry_out);
+
+    tcg_temp_free_i64(carry_out);
+    tcg_temp_free_i64(tmp);
+}
+
+static void gen_arith_CC_32(TCGv_i32 result,
+                            TCGv_i32 x, TCGv_i32 y, TCGv_i32 carry_in)
+{
+    TCGv_i32 tmp, carry_out;
+    tmp = tcg_const_i32(0);
+    carry_out = tcg_temp_new_i32();
+
+    /* calculate [C:result] = x + y + carry_in */
+    tcg_gen_add2_i32(result, carry_out, x, tmp, carry_in, tmp);
+    tcg_gen_add2_i32(result, carry_out, result, carry_out, y, tmp);
+    tcg_gen_mov_i32(cpu_CF, carry_out);
+
+    /* calculate NZ */
+    tcg_gen_mov_i32(cpu_ZF, result);
+    tcg_gen_mov_i32(cpu_NF, result);
+
+    /* calculate V */
+    tcg_gen_xor_i32(carry_out, result, x);
+    tcg_gen_xor_i32(tmp, x, y);
+    tcg_gen_andc_i32(cpu_VF, carry_out, tmp);
+
+    tcg_temp_free_i32(carry_out);
+    tcg_temp_free_i32(tmp);
+}
+
+/* see AddWithCarry, "G.3 Common library pseudocode" */
+static void gen_arith_CC(int sf, TCGv_i64 result,
+                         TCGv_i64 x, TCGv_i64 y, TCGv_i64 carry_in)
+{
+    if (sf) {
+        gen_arith_CC_64(result, x, y, carry_in);
+    } else {
+        TCGv_i32 result32, x32, y32, carry_in32;
+        result32 = tcg_temp_new_i32();
+        x32 = tcg_temp_new_i32();
+        y32 = tcg_temp_new_i32();
+        carry_in32 = tcg_temp_new_i32();
+        tcg_gen_trunc_i64_i32(result32, result);
+        tcg_gen_trunc_i64_i32(x32, x);
+        tcg_gen_trunc_i64_i32(y32, y);
+        tcg_gen_trunc_i64_i32(carry_in32, carry_in);
+
+        gen_arith_CC_32(result32, x32, y32, carry_in32);
+        tcg_gen_extu_i32_i64(result, result32);
+
+        tcg_temp_free_i32(result32);
+        tcg_temp_free_i32(x32);
+        tcg_temp_free_i32(y32);
+        tcg_temp_free_i32(carry_in32);
+    }
 }
 
 enum sysreg_access {

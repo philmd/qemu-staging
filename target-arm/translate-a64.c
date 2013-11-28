@@ -444,6 +444,70 @@ static int sysreg_access(enum sysreg_access access, DisasContext *s,
 }
 
 /*
+ * Load/Store generators
+ */
+
+/*
+  Store from GPR Register to Memory
+*/
+static void do_gpr_st(DisasContext *s, TCGv_i64 source, TCGv_i64 tcg_addr, int size)
+{
+    switch (size) {
+    case 0:
+        tcg_gen_qemu_st8(source, tcg_addr, get_mem_index(s));
+        break;
+    case 1:
+        tcg_gen_qemu_st16(source, tcg_addr, get_mem_index(s));
+        break;
+    case 2:
+        tcg_gen_qemu_st32(source, tcg_addr, get_mem_index(s));
+        break;
+    case 3:
+        tcg_gen_qemu_st64(source, tcg_addr, get_mem_index(s));
+        break;
+    default:
+        /* Bad size */
+        g_assert(false);
+        break;
+    }
+}
+
+/*
+  Load from memory to GPR Register
+*/
+static void do_gpr_ld(DisasContext *s, TCGv_i64 dest, TCGv_i64 tcg_addr, int size, int is_signed)
+{
+    switch (size) {
+    case 0:
+        if (is_signed) {
+            tcg_gen_qemu_ld8s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld8u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 1:
+        if (is_signed) {
+            tcg_gen_qemu_ld16s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld16u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 2:
+        if (is_signed) {
+            tcg_gen_qemu_ld32s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld32u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 3:
+        tcg_gen_qemu_ld64(dest, tcg_addr, get_mem_index(s));
+        break;
+    default:
+        /* Bad size */
+        g_assert(false);
+        break;
+    }
+}
  * the instruction disassembly implemented here matches
  * the instruction encoding classifications in chapter 3 (C3)
  * of the ARM Architecture Reference Manual (DDI0487A_a)

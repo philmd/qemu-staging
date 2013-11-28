@@ -1078,10 +1078,71 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
     }
 }
 
+/*
+C3.3.13 Load/store (unsigned immediate - non vector)
+
+  31 30 29   27  26 25 24 23 22 21        10 9     5
+  +----+-------+---+-----+-----+------------+-------+------+
+  |size| 1 1 1 | 0 | 0 1 | opc |   imm12    |  Rn   |  Rt  |
+  +----+-------+---+-----+-----+------------+-------+------+
+
+  size: 00-> byte, 01 -> 16 bit, 10 -> 32bit, 11 -> 64bit
+  opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
+  Rn: base address register (inc SP)
+  Rt: target register
+*/
+static void handle_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    unsigned int imm12 = extract32(insn, 10, 12);
+    int size = extract32(insn, 30, 2);
+    int opc = extract32(insn, 22, 2);
+    unsigned int offset = imm12 << size;
+
+    TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
+    TCGv_i64 tcg_rt = cpu_reg(s, rt);
+    TCGv_i64 tcg_addr = tcg_temp_new_i64();
+
+    bool is_store = false;
+    bool is_signed = opc & (1<<1);
+
+    if (size == 3 && opc == 2) {
+        /* PRFM - prefetch */
+        return;
+    } else if (opc == 0) {
+        is_store = true;
+    }
+
+    tcg_gen_addi_i64(tcg_addr, tcg_rn, offset);
+    if (is_store) {
+        do_gpr_st(s, tcg_rt, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+    }
+    tcg_temp_free_i64(tcg_addr);
+}
+
 /* Load/store register (all forms) */
 static void disas_ldst_reg(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int is_vector = extract32(insn, 26, 1);
+
+    if (is_vector) {
+        unsupported_encoding(s, insn);
+    } else {
+        switch (extract32(insn, 24, 2)) {
+        case 0:
+            unsupported_encoding(s, insn);
+            break;
+        case 1:
+            handle_ldst_reg_unsigned_imm(s, insn);
+            break;
+        default:
+            unallocated_encoding(s);
+            break;
+        }
+    }
 }
 
 /* AdvSIMD load/store multiple structures */

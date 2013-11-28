@@ -1033,10 +1033,67 @@ static void disas_pc_rel_adr(DisasContext *s, uint32_t insn)
     tcg_gen_movi_i64(cpu_reg(s, rd), base + offset);
 }
 
-/* Add/subtract (immediate) */
+/* C3.4.1 Add/subtract (immediate)
+
+   31 30 29 28       24 23 22 21         10 9   5 4   0
+  +--+--+--+-----------+-----+-------------+-----+-----+
+  |sf|op| S| 1 0 0 0 1 |shift|    imm12    |  Rn | Rd  |
+  +--+--+--+-----------+-----+-------------+-----+-----+
+
+   sf: 0 -> 32bit, 1 -> 64bit
+   op: 0 -> add  , 1 -> sub
+    S: 1 -> set flags
+shift: 00 -> LSL imm by 0, 01 -> LSL imm by 12
+*/
 static void disas_add_sub_imm(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int rd = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    uint64_t imm = extract32(insn, 10, 12);
+    int shift = extract32(insn, 22, 2);
+    bool setflags = extract32(insn, 29, 1);
+    bool sub_op = extract32(insn, 30, 1);
+    bool is_32bit = !extract32(insn, 31, 1);
+
+    TCGv_i64 tcg_result = tcg_temp_new_i64();
+    TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
+    TCGv_i64 tcg_rd = setflags ? cpu_reg(s, rd):cpu_reg_sp(s, rd);
+
+    TCGv_i64 tcg_imm;
+    TCGv_i64 carry_in; // used for flag setting
+
+    switch (shift) {
+    case 0x0:
+        break;
+    case 0x1:
+        imm <<= 12;
+        break;
+    default:
+        unallocated_encoding(s);
+    }
+
+    if (sub_op) {
+        tcg_imm = tcg_const_i64(-imm);
+        carry_in = tcg_const_i64(1);
+    } else {
+        tcg_imm = tcg_const_i64(imm);
+        carry_in = tcg_const_i64(0);
+    }
+
+    tcg_gen_add_i64(tcg_result, tcg_rn, tcg_imm);
+    if (setflags) {
+        gen_arith_CC(!is_32bit, tcg_result, tcg_rn, tcg_imm, carry_in);
+    }
+
+    if (is_32bit) {
+        tcg_gen_ext32u_i64(tcg_rd, tcg_result);
+    } else {
+        tcg_gen_mov_i64(tcg_rd, tcg_result);
+    }
+
+    tcg_temp_free_i64(tcg_imm);
+    tcg_temp_free_i64(carry_in);
+    tcg_temp_free_i64(tcg_result);
 }
 
 static uint64_t logic_imm_replicate(uint64_t mask, unsigned int esize)
@@ -1388,16 +1445,129 @@ static void disas_logic_reg(DisasContext *s, uint32_t insn)
     tcg_temp_free_i64(tcg_rm);
 }
 
-/* Add/subtract (extended register) */
-static void disas_add_sub_ext_reg(DisasContext *s, uint32_t insn)
+/* C3.5.1 Add/subtract (extended register)
+
+   31|30|29|28       24|23 22|21|20   16|15  13|12  10|9  5|4  0|
+  +--+--+--+-----------+-----+--+-------+------+------+----+----+
+  |sf|op| S| 0 1 0 1 1 | opt | 1|  Rm   |option| imm3 | Rn | Rd |
+  +--+--+--+-----------+-----+--+-------+------+------+----+----+
+
+   sf: 0 -> 32bit, 1 -> 64bit
+   op: 0 -> add  , 1 -> sub
+    S: 1 -> set flags
+  opt: 00
+  option: extension type (see DecodeRegExtend)
+  imm3: optional shift to Rm
+
+  Rd = Rn + LSL(extend(Rm), amount)
+*/
+
+static void handle_add_sub_ext_reg(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int rd = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int imm3 = sextract32(insn, 10, 3);
+    int option = extract32(insn, 13, 3);
+    int rm = extract32(insn, 16, 5);
+    bool setflags = extract32(insn, 29, 1);
+    bool sub_op = extract32(insn, 30, 1);
+    bool sf = extract32(insn, 31, 1);
+
+    TCGv_i64 tcg_rm = cpu_reg(s, rm);
+    TCGv_i64 tcg_rm_ext = tcg_temp_new_i64();
+    TCGv_i64 tcg_rd;
+    TCGv_i64 tcg_rn;
+    TCGv_i64 carry_in;
+
+    /* non-flag setting ops may use SP */
+    if (!setflags) {
+        tcg_rn = tcg_temp_new_i64();
+        tcg_gen_mov_i64(tcg_rn, cpu_reg_sp(s, rn));
+        tcg_rd = cpu_reg_sp(s, rd);
+    } else {
+        tcg_rn = new_cpu_reg(s, rn, sf);
+        tcg_rd = cpu_reg(s, rd);
+    }
+
+    ext_and_shift_reg(tcg_rm_ext, tcg_rm, option, imm3);
+
+    if (!sf) {
+        tcg_gen_ext32s_i64(tcg_rm_ext, tcg_rm_ext); // superflous?
+        tcg_gen_ext32s_i64(tcg_rn, tcg_rn);
+    }
+
+    if (sub_op) {
+        tcg_gen_not_i64(tcg_rm, tcg_rm);
+        carry_in = tcg_const_i64(1);
+    } else {
+        carry_in = tcg_const_i64(0);
+    }
+
+    tcg_gen_add_i64(tcg_rd, tcg_rn, tcg_rm_ext);
+    if (setflags) {
+        gen_arith_CC(sf, tcg_rd, tcg_rn, tcg_rm, carry_in);
+    }
+
+    if (!sf) {
+        tcg_gen_ext32u_i64(tcg_rd, tcg_rd);
+    }
+
+    tcg_temp_free_i64(tcg_rm_ext);
+    tcg_temp_free_i64(tcg_rn);
+    tcg_temp_free_i64(carry_in);
 }
 
-/* Add/subtract (shifted register) */
-static void disas_add_sub_reg(DisasContext *s, uint32_t insn)
+/* C3.5.2 Add/subtract (shifted register)
+
+   31 30 29 28       24 23 22 21 20   16 15     10 9    5 4    0
+  +--+--+--+-----------+-----+--+-------+---------+------+------+
+  |sf|op| S| 0 1 0 1 1 |shift| 0|  Rm   |  imm6   |  Rn  |  Rd  |
+  +--+--+--+-----------+-----+--+-------+---------+------+------+
+
+   sf: 0 -> 32bit, 1 -> 64bit
+   op: 0 -> add  , 1 -> sub
+    S: 1 -> set flags
+shift: apply a shift of imm6 to Rm before the add/sub
+ */
+static void handle_add_sub_reg(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int rd = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int shift_amount = sextract32(insn, 10, 6);
+    int rm = extract32(insn, 16, 5);
+    int shift_type = extract32(insn, 22, 2);
+    bool setflags = extract32(insn, 29, 1);
+    bool sub_op = extract32(insn, 30, 1);
+    bool sf = extract32(insn, 31, 1);
+
+    TCGv_i64 tcg_rd = cpu_reg(s, rd);
+    TCGv_i64 tcg_rn = new_cpu_reg(s, rn, sf);
+    TCGv_i64 tcg_rm = new_cpu_reg(s, rm, sf);
+    TCGv_i64 carry_in;
+
+    /* Rm is optionally shifted */
+    shift_reg_imm(tcg_rm, tcg_rm, sf, shift_type, shift_amount);
+
+    if (sub_op) {
+        carry_in = tcg_const_i64(1);
+        tcg_gen_not_i64(tcg_rm, tcg_rm);
+    } else {
+        carry_in = tcg_const_i64(0);
+    }
+
+    if (setflags) {
+        gen_arith_CC(sf, tcg_rd, tcg_rn, tcg_rm, carry_in);
+    } else {
+        tcg_gen_add_i64(tcg_rd, tcg_rn, tcg_rm);
+    }
+
+    if (!sf) {
+        tcg_gen_ext32u_i64(tcg_rd, tcg_rd);
+    }
+
+    tcg_temp_free_i64(tcg_rn);
+    tcg_temp_free_i64(tcg_rm);
+    tcg_temp_free_i64(carry_in);
 }
 
 /* Data-processing (3 source) */
@@ -1743,9 +1913,9 @@ static void disas_data_proc_reg(DisasContext *s, uint32_t insn)
         break;
     case 0x0b: /* Add/subtract */
         if (insn & (1 << 21)) { /* (extended register) */
-            disas_add_sub_ext_reg(s, insn);
+            handle_add_sub_ext_reg(s, insn);
         } else {
-            disas_add_sub_reg(s, insn);
+            handle_add_sub_reg(s, insn);
         }
         break;
     case 0x1b: /* Data-processing (3 source) */

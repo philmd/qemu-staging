@@ -545,6 +545,137 @@ static void do_gpr_st(DisasContext *s, TCGv_i64 source, TCGv_i64 tcg_addr, int s
 }
 
 /*
+  Load from memory to GPR Register
+*/
+static void do_gpr_ld(DisasContext *s, TCGv_i64 dest, TCGv_i64 tcg_addr, int size, int is_signed)
+{
+    switch (size) {
+    case 0:
+        if (is_signed) {
+            tcg_gen_qemu_ld8s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld8u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 1:
+        if (is_signed) {
+            tcg_gen_qemu_ld16s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld16u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 2:
+        if (is_signed) {
+            tcg_gen_qemu_ld32s(dest, tcg_addr, get_mem_index(s));
+        } else {
+            tcg_gen_qemu_ld32u(dest, tcg_addr, get_mem_index(s));
+        }
+        break;
+    case 3:
+        tcg_gen_qemu_ld64(dest, tcg_addr, get_mem_index(s));
+        break;
+    default:
+        /* Bad size */
+        g_assert(false);
+        break;
+    }
+}
+
+/* Store from FP register to memory */
+static void do_fp_st(DisasContext *s, int srcidx, TCGv_i64 tcg_addr, int size)
+{
+    /* This writes the bottom N bits of a 128 bit wide vector to memory */
+    int freg_offs = offsetof(CPUARMState, vfp.regs[srcidx * 2]);
+    TCGv_i64 tmp = tcg_temp_new_i64();
+
+    switch (size) {
+    case 0:
+        tcg_gen_ld8u_i64(tmp, cpu_env, freg_offs);
+        tcg_gen_qemu_st8(tmp, tcg_addr, get_mem_index(s));
+        break;
+    case 1:
+        tcg_gen_ld16u_i64(tmp, cpu_env, freg_offs);
+        tcg_gen_qemu_st16(tmp, tcg_addr, get_mem_index(s));
+        break;
+    case 2:
+        tcg_gen_ld32u_i64(tmp, cpu_env, freg_offs);
+        tcg_gen_qemu_st32(tmp, tcg_addr, get_mem_index(s));
+        break;
+    case 3:
+        tcg_gen_ld_i64(tmp, cpu_env, freg_offs);
+        tcg_gen_qemu_st64(tmp, tcg_addr, get_mem_index(s));
+        break;
+    case 4:
+    {
+        TCGv_i64 tcg_hiaddr = tcg_temp_new_i64();
+        tcg_gen_ld_i64(tmp, cpu_env, freg_offs);
+        tcg_gen_qemu_st64(tmp, tcg_addr, get_mem_index(s));
+        tcg_gen_ld_i64(tmp, cpu_env, freg_offs = sizeof(float64));
+        tcg_gen_addi_i64(tcg_hiaddr, tcg_addr, 8);
+        tcg_gen_qemu_st64(tmp, tcg_hiaddr, get_mem_index(s));
+        tcg_temp_free_i64(tcg_hiaddr);
+        break;
+    }
+    default:
+        g_assert(false);
+        break;
+    }
+
+    tcg_temp_free_i64(tmp);
+}
+
+/* Load from memory to FP register */
+static void do_fp_ld(DisasContext *s, int destidx, TCGv_i64 tcg_addr, int size)
+{
+    /* This always zero-extends and writes to a full 128 bit wide vector */
+    int freg_offs = offsetof(CPUARMState, vfp.regs[destidx * 2]);
+    TCGv_i64 tmplo = tcg_temp_new_i64();
+    TCGv_i64 tmphi;
+
+    switch (size) {
+    case 0:
+        tcg_gen_qemu_ld8u(tmplo, tcg_addr, get_mem_index(s));
+        break;
+    case 1:
+        tcg_gen_qemu_ld16u(tmplo, tcg_addr, get_mem_index(s));
+        break;
+    case 2:
+        tcg_gen_qemu_ld32u(tmplo, tcg_addr, get_mem_index(s));
+        break;
+    case 3:
+    case 4:
+        tcg_gen_qemu_ld64(tmplo, tcg_addr, get_mem_index(s));
+        break;
+    default:
+        g_assert(false);
+        break;
+    }
+
+    switch (size) {
+    case 4:
+    {
+        TCGv_i64 tcg_hiaddr;
+
+        tmphi = tcg_temp_new_i64();
+        tcg_hiaddr = tcg_temp_new_i64();
+        tcg_gen_addi_i64(tcg_hiaddr, tcg_addr, 8);
+        tcg_gen_qemu_ld64(tmphi, tcg_hiaddr, get_mem_index(s));
+        tcg_temp_free_i64(tcg_hiaddr);
+        break;
+    }
+    default:
+        tmphi = tcg_const_i64(0);
+        break;
+    }
+
+    tcg_gen_st_i64(tmplo, cpu_env, freg_offs);
+    tcg_gen_st_i64(tmphi, cpu_env, freg_offs + sizeof(float64));
+
+    tcg_temp_free_i64(tmplo);
+    tcg_temp_free_i64(tmphi);
+}
+
+/*
  * This utility function is for doing register extension with an
  * optional shift. You will likely want to pass a temporary for the
  * destination register. See DecodeRegExtend() in the aarch64 manual
@@ -1094,10 +1225,91 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
     }
 }
 
+/*
+C3.3.13 Load/store (unsigned immediate)
+
+  31 30 29   27  26 25 24 23 22 21        10 9     5
+  +----+-------+---+-----+-----+------------+-------+------+
+  |size| 1 1 1 | V | 0 1 | opc |   imm12    |  Rn   |  Rt  |
+  +----+-------+---+-----+-----+------------+-------+------+
+
+  For non-vector:
+    size: 00-> byte, 01 -> 16 bit, 10 -> 32bit, 11 -> 64bit
+    opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
+  For vector:
+    size is opc<1>:size<1:0> so 100 -> 128 bit; 110 and 111 unallocated
+    opc<0>: 0 -> store, 1 -> load
+  Rn: base address register (inc SP)
+  Rt: target register
+*/
+static void handle_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    unsigned int imm12 = extract32(insn, 10, 12);
+    bool is_vector = extract32(insn, 26, 1);
+    int size = extract32(insn, 30, 2);
+    int opc = extract32(insn, 22, 2);
+    unsigned int offset;
+
+    TCGv_i64 tcg_rn;
+    TCGv_i64 tcg_rt;
+    TCGv_i64 tcg_addr;
+
+    bool is_store, is_signed;
+
+    if (is_vector) {
+        size |= (opc & 2) << 1;
+        if (size > 4) {
+            unallocated_encoding(s);
+        }
+        is_store = ((opc & 1) == 0);
+    } else {
+        if (size == 3 && opc == 2) {
+            /* PRFM - prefetch */
+            return;
+        }
+        is_store = (opc == 0);
+        is_signed = opc & (1<<1);
+    }
+
+    tcg_rn = cpu_reg_sp(s, rn);
+    tcg_addr = tcg_temp_new_i64();
+
+    offset = imm12 << size;
+    tcg_gen_addi_i64(tcg_addr, tcg_rn, offset);
+
+    if (is_vector) {
+        if (is_store) {
+            do_fp_st(s, rt, tcg_addr, size);
+        } else {
+            do_fp_ld(s, rt, tcg_addr, size);
+        }
+    } else {
+        tcg_rt = cpu_reg(s, rt);
+        if (is_store) {
+            do_gpr_st(s, tcg_rt, tcg_addr, size);
+        } else {
+            do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+        }
+    }
+    tcg_temp_free_i64(tcg_addr);
+}
+
 /* Load/store register (all forms) */
 static void disas_ldst_reg(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    switch (extract32(insn, 24, 2)) {
+    case 0:
+        unsupported_encoding(s, insn);
+        break;
+    case 1:
+        handle_ldst_reg_unsigned_imm(s, insn);
+        break;
+    default:
+        unallocated_encoding(s);
+        break;
+    }
 }
 
 /* AdvSIMD load/store multiple structures */

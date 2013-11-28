@@ -1151,6 +1151,82 @@ static void handle_ld_lit(DisasContext *s, uint32_t insn)
 }
 
 /*
+  C5.6.81 LDP (Load Pair - non vector)
+  C5.6.82 LDPSW (Load Pair Signed Word - non vector
+
+   31 30 29       26 25   23 22 21   15 14   10 9    5 4    0
+  +--+--+-----------+-------+--+-----------------------------+
+  |sf| s| 1 0 1 0   | index | 1|  imm7 |  Rt2  |  Rn  | Rt   |
+  +-----+-----------+-------+--+-------+-------+------+------+
+                              L
+  sf: 0 -> 32bit, 1 -> 64bit
+   s: 0 -> unsigned, 1 -> signed
+ idx: 001 -> post-index, 011 -> pre-index, 010 -> signed off
+
+*/
+static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int rt2 = extract32(insn, 10, 5);
+    int64_t offset = sextract32(insn, 15, 7);
+    int idx = extract32(insn, 23, 3);
+    int is_signed = extract32(insn, 30, 1);
+    int sf = extract32(insn, 31, 1);
+
+    int size = sf?3:2;
+    bool postindex = true;
+    bool wback = false;
+
+    TCGv_i64 tcg_rt = cpu_reg(s, rt);
+    TCGv_i64 tcg_rt2 = cpu_reg(s, rt2);
+    TCGv_i64 tcg_addr = tcg_temp_new_i64();
+
+    switch (idx) {
+    case 1: /* post-index */
+        postindex = true;
+        wback = true;
+        break;
+    case 2: /* signed offset, rn not updated */
+        postindex = false;
+        break;
+    case 3: /* STP (pre-index) */
+        postindex = false;
+        wback = true;
+        break;
+    default: /* Failed decoder tree? */
+        unallocated_encoding(s);
+        break;
+    }
+
+    offset <<= size;
+
+    if (rn == 31) {
+        /* XXX check SP alignment */
+    }
+    tcg_gen_mov_i64(tcg_addr, cpu_reg_sp(s, rn));
+
+    if (!postindex) {
+        tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
+    }
+
+    do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+    tcg_gen_addi_i64(tcg_addr, tcg_addr, 1 << size);
+    do_gpr_ld(s, tcg_rt2, tcg_addr, size, is_signed);
+
+    // XXX - this could be more optimal?
+    tcg_gen_subi_i64(tcg_addr, tcg_addr, 1 << size);
+
+    if (wback) {
+        if (postindex) {
+            tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
+        }
+        tcg_gen_mov_i64(cpu_reg_sp(s, rn), tcg_addr);
+    }
+    tcg_temp_free_i64(tcg_addr);
+}
+
+/*
   C5.6.177 STP (Store Pair - non vector)
 
    31 30 29       26 25   23 22 21   15 14   10 9    5 4    0
@@ -1171,7 +1247,7 @@ static void handle_gpr_stp(DisasContext *s, uint32_t insn)
     int rt = extract32(insn, 0, 5);
     int rn = extract32(insn, 5, 5);
     int rt2 = extract32(insn, 10, 5);
-    int offset = sextract32(insn, 15, 7);
+    int64_t offset = sextract32(insn, 15, 7);
     int type = extract32(insn, 23, 2);
     int is_32bit = !extract32(insn, 30, 2);
 
@@ -1262,7 +1338,7 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
     int is_load = extract32(insn, 22, 1);
 
     if (is_load) {
-        unsupported_encoding(s, insn);
+        handle_gpr_ldp(s, insn);
     } else {
         handle_gpr_stp(s, insn);
     }

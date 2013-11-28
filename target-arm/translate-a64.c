@@ -111,6 +111,13 @@ void aarch64_cpu_dump_state(CPUState *cs, FILE *f,
     cpu_fprintf(f, "\n");
 }
 
+
+static int get_mem_index(DisasContext *s)
+{
+    /* XXX only user mode for now */
+    return 1;
+}
+
 void gen_a64_set_pc_im(uint64_t val)
 {
     tcg_gen_movi_i64(cpu_pc, val);
@@ -506,6 +513,35 @@ static int sysreg_access(enum sysreg_access access, DisasContext *s,
     }
 
     return 1; /* unsupported */
+}
+
+/*
+ * Load/Store generators
+ */
+
+/*
+  Store from GPR Register to Memory
+*/
+static void do_gpr_st(DisasContext *s, TCGv_i64 source, TCGv_i64 tcg_addr, int size)
+{
+    switch (size) {
+    case 0:
+        tcg_gen_qemu_st8(source, tcg_addr, get_mem_index(s));
+        break;
+    case 1:
+        tcg_gen_qemu_st16(source, tcg_addr, get_mem_index(s));
+        break;
+    case 2:
+        tcg_gen_qemu_st32(source, tcg_addr, get_mem_index(s));
+        break;
+    case 3:
+        tcg_gen_qemu_st64(source, tcg_addr, get_mem_index(s));
+        break;
+    default:
+        /* Bad size */
+        g_assert(false);
+        break;
+    }
 }
 
 /*
@@ -940,10 +976,122 @@ static void disas_ld_lit(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
-/* Load/store pair (all forms) */
+/*
+  C5.6.177 STP (Store Pair - non vector)
+
+   31 30 29       26 25   23 22 21   15 14   10 9    5 4    0
+  +-----+-----------+-------+--+-----------------------------+
+  | opc | 1 0 1 0 0 | index | 0|  imm7 |  Rt2  |  Rn  | Rt   |
+  +-----+-----------+-------+--+-------+-------+------+------+
+
+  opc = 00 -> 32 bit, 10 -> 64 bit
+  index_mode = 01 -> post-index
+               11 -> pre-index
+               10 -> signed-offset
+  Rt, Rt2 = general purpose registers to be stored
+  Rn = general purpose register containing address
+  imm7 = signed offset (multiple of 4 or 8 depending on size)
+ */
+static void handle_gpr_stp(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int rt2 = extract32(insn, 10, 5);
+    int offset = sextract32(insn, 15, 7);
+    int type = extract32(insn, 23, 2);
+    int is_32bit = !extract32(insn, 30, 2);
+
+    TCGv_i64 tcg_rt = cpu_reg(s, rt);
+    TCGv_i64 tcg_rt2 = cpu_reg(s, rt2);
+    TCGv_i64 tcg_addr; /* calculated address */
+    bool postindex = false;
+    bool wback = false;
+    int size = is_32bit ? 2 : 3;
+
+    switch (type) {
+    case 1: /* STP (post-index) */
+        postindex = true;
+        wback = true;
+        break;
+    case 2: /* STP (signed offset), rn not updated */
+        postindex = false;
+        break;
+    case 3: /* STP (pre-index) */
+        postindex = false;
+        wback = true;
+        break;
+    default: /* Failed decoder tree? */
+        unallocated_encoding(s);
+        break;
+    }
+
+    offset <<= size;
+
+    tcg_addr = tcg_temp_new_i64();
+    if (rn == 31) {
+        /* XXX CheckSPAlignment - may fault */
+    }
+    tcg_gen_mov_i64(tcg_addr, cpu_reg_sp(s, rn));
+
+    if (!postindex) {
+        tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
+    }
+
+    do_gpr_st(s, tcg_rt, tcg_addr, size);
+    tcg_gen_addi_i64(tcg_addr, tcg_addr, 1 << size);
+    do_gpr_st(s, tcg_rt2, tcg_addr, size);
+    // XXX - this could be more optimal?
+    tcg_gen_subi_i64(tcg_addr, tcg_addr, 1 << size);
+
+    if (wback) {
+        if (postindex) {
+            tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
+        }
+        tcg_gen_mov_i64(cpu_reg_sp(s, rn), tcg_addr);
+    }
+
+    tcg_temp_free_i64(tcg_addr);
+}
+
+
+/* C2.2.3 Load/store pair (all non vector forms)
+
+   31 30 29       26 25   23 22 21   15 14   10 9    5 4    0
+  +-----+-----------+-------+--+-----------------------------+
+  | opc | 1 0 1 0 0 | index | L|  imm7 |  Rt2  |  Rn  | Rt1  |
+  +-----+-----------+-------+--+-------+-------+------+------+
+
+  opc = 00 -> 32 bit, 10 -> 64 bit, 01 -> LDPSW
+  L = 0 -> Store, 1 -> Load
+  index = 01 -> post-index
+          11 -> pre-index
+          10 -> signed-index
+
+  The following instructions are defined in:
+    C5.6.81 LDP (Load pair)
+    C5.6.82 LDPSW (Load pair of registers signed word)
+    C5.6.177 STP (Store Pair)
+
+   31 30 29          22 21   15 14   10 9    5 4    0
+  +-----+--------------+-----------------------------+
+  | 0 1 |  index_mode  |  imm7 |  Rt2  |  Rn  | Rt1  |
+  +-----+--------------+-------+-------+------+------+
+
+  opc = 00 -> 32 bit, 10 -> 64 bit
+  index_mode = 10100011 -> post-index
+               10100111 -> pre-index
+               10100101 -> signed offset
+
+ */
 static void disas_ldst_pair(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int is_load = extract32(insn, 22, 1);
+
+    if (is_load) {
+        unsupported_encoding(s, insn);
+    } else {
+        handle_gpr_stp(s, insn);
+    }
 }
 
 /* Load/store register (all forms) */

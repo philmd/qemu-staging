@@ -159,7 +159,14 @@ static TCGv_i64 new_tmp_a64_zero(DisasContext *s)
     return s->tmp_a64[s->tmp_a64_count++] = tcg_const_i64(0);
 }
 
-/* for accessing a register in 64 bit mode (r/w) */
+
+/*
+  B1.2.1 Register mappings
+
+  In instruction register encoding 31 can refer to ZR (zero register) or
+  the SP (stack pointer) depending on context. In QEMUs case we map SP
+  to cpu_X[31] and ZR accesses to a temporary which can be discarded.
+ */
 static TCGv_i64 cpu_reg(DisasContext *s, int reg)
 {
     if (reg == 31) {
@@ -186,6 +193,25 @@ static void read_cpu_reg(DisasContext *s, TCGv_i64 dst, int reg, int sf)
         tcg_gen_ext32u_i64(dst, cpu_X[reg]);
     }
 }
+
+/* create new temporary for accessing a register in 32/64 bit mode (read-only),
+   always a copy. Return value is a temporary that needs to be freed. */
+static TCGv_i64 new_cpu_reg(DisasContext *s, int reg, int sf)
+{
+    TCGv_i64 rv;
+
+    if (reg == 31) {
+        rv = tcg_const_i64(0);
+    } else if (sf) {
+        rv = tcg_temp_new_i64();
+        tcg_gen_mov_i64(rv, cpu_X[reg]);
+    } else { /* (!sf) */
+        rv = tcg_temp_new_i64();
+        tcg_gen_ext32u_i64(rv, cpu_X[reg]);
+    }
+    return rv;
+}
+
 
 static inline bool use_goto_tb(DisasContext *s, int n, uint64_t dest)
 {

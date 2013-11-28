@@ -508,6 +508,57 @@ static void do_gpr_ld(DisasContext *s, TCGv_i64 dest, TCGv_i64 tcg_addr, int siz
         break;
     }
 }
+
+/*
+ * This utility function is for doing register extension with an
+ * optional shift. You will likely want to pass a temporary for the
+ * destination register. See DecodeRegExtend() in the aarch64 manual
+ */
+
+static void ext_and_shift_reg(TCGv_i64 tcg_out, TCGv_i64 tcg_in,
+                              int option, int shift)
+{
+    int extsize = extract32(option, 0, 2);
+    bool is_signed = extract32(option, 2, 1);
+
+    if (is_signed) {
+        switch (extsize) {
+        case 0:
+            tcg_gen_ext8s_i64(tcg_out, tcg_in);
+            break;
+        case 1:
+            tcg_gen_ext16s_i64(tcg_out, tcg_in);
+            break;
+        case 2:
+            tcg_gen_ext32s_i64(tcg_out, tcg_in);
+            break;
+        case 3:
+            tcg_gen_mov_i64(tcg_out, tcg_in);
+            break;
+        }
+    } else {
+        switch (extsize) {
+        case 0:
+            tcg_gen_ext8u_i64(tcg_out, tcg_in);
+            break;
+        case 1:
+            tcg_gen_ext16u_i64(tcg_out, tcg_in);
+            break;
+        case 2:
+            tcg_gen_ext32u_i64(tcg_out, tcg_in);
+            break;
+        case 3:
+            tcg_gen_mov_i64(tcg_out, tcg_in);
+            break;
+        }
+    }
+
+    if (shift) {
+        tcg_gen_shli_i64(tcg_out, tcg_out, shift);
+    }
+}
+
+/*
  * the instruction disassembly implemented here matches
  * the instruction encoding classifications in chapter 3 (C3)
  * of the ARM Architecture Reference Manual (DDI0487A_a)

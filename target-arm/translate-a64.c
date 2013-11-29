@@ -2483,6 +2483,7 @@ static void disas_data_proc_reg(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             break;
         }
+        break;
     default:
         unallocated_encoding(s);
         break;

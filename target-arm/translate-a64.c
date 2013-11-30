@@ -1320,7 +1320,7 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
     int rt = extract32(insn, 0, 5);
     int rn = extract32(insn, 5, 5);
     int rt2 = extract32(insn, 10, 5);
-    int imm7 = sextract32(insn, 15, 7);
+    int64_t offset = sextract32(insn, 15, 7);
     int idx = extract32(insn, 23, 3);
     int is_signed = extract32(insn, 30, 1);
     int sf = extract32(insn, 31, 1);
@@ -1350,13 +1350,15 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
         break;
     }
 
+    offset <<= size;
+
     if (rn == 31) {
         /* XXX check SP alignment */
     }
     tcg_gen_mov_i64(tcg_addr, cpu_reg_sp(s, rn));
 
     if (!postindex) {
-        tcg_gen_addi_i64(tcg_addr, tcg_addr, imm7);
+        tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
     }
 
     do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
@@ -1368,7 +1370,7 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
 
     if (wback) {
         if (postindex) {
-            tcg_gen_addi_i64(tcg_addr, tcg_addr, imm7);
+            tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
         }
         tcg_gen_mov_i64(cpu_reg_sp(s, rn), tcg_addr);
     }
@@ -1396,7 +1398,7 @@ static void handle_gpr_stp(DisasContext *s, uint32_t insn)
     int rt = extract32(insn, 0, 5);
     int rn = extract32(insn, 5, 5);
     int rt2 = extract32(insn, 10, 5);
-    int offset = sextract32(insn, 15, 7);
+    int64_t offset = sextract32(insn, 15, 7);
     int type = extract32(insn, 23, 2);
     int is_32bit = !extract32(insn, 30, 2);
 

@@ -1248,10 +1248,16 @@ static void handle_ldst_reg_indexed_imm(DisasContext *s, uint32_t insn)
     bool is_signed = false;
     bool is_store = false;
     bool is_extended = false;
+    bool is_vector = extract32(insn, 26, 1);
 
     TCGv_i64 tcg_rt = cpu_reg(s, rt);
     TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
     TCGv_i64 tcg_addr;
+
+    if (is_vector) {
+        unsupported_encoding(s, insn);
+        return;
+    }
 
     switch (opc) {
     case 0:
@@ -1324,6 +1330,7 @@ static void handle_ldst_reg_roffset(DisasContext *s, uint32_t insn)
     int size = extract32(insn, 30, 2);
     bool is_signed = false;
     bool is_store = false;
+    bool is_vector = extract32(insn, 26, 1);
 
     TCGv_i64 tcg_rt = cpu_reg(s, rt);
     TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
@@ -1331,6 +1338,11 @@ static void handle_ldst_reg_roffset(DisasContext *s, uint32_t insn)
     TCGv_i64 tcg_rm_ext = tcg_temp_new_i64();
 
     TCGv_i64 tcg_addr;
+
+    if (is_vector) {
+        unsupported_encoding(s, insn);
+        return;
+    }
 
     g_assert(extract32(insn, 10, 2)==2); /* only roffset */
     g_assert(extract32(insn, 26, 1)==0); /* not vector */
@@ -1396,6 +1408,12 @@ static void handle_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn)
 
     bool is_store = false;
     bool is_signed = opc & (1<<1);
+    bool is_vector = extract32(insn, 26, 1);
+
+    if (is_vector) {
+        unsupported_encoding(s, insn);
+        return;
+    }
 
     if (size == 3 && opc == 2) {
         /* PRFM - prefetch */
@@ -1438,26 +1456,20 @@ static void disas_ldst_reg_imm(DisasContext *s, uint32_t insn)
 /* Load/store register (all forms) */
 static void disas_ldst_reg(DisasContext *s, uint32_t insn)
 {
-    int is_vector = extract32(insn, 26, 1);
-
-    if (is_vector) {
-        unsupported_encoding(s, insn);
-    } else {
-        switch (extract32(insn, 24, 2)) {
-        case 0:
-            if (extract32(insn, 21,1)) {
-                handle_ldst_reg_roffset(s, insn);
-            } else {
-                disas_ldst_reg_imm(s, insn);
-            }
-            break;
-        case 1:
-            handle_ldst_reg_unsigned_imm(s, insn);
-            break;
-        default:
-            unallocated_encoding(s);
-            break;
+    switch (extract32(insn, 24, 2)) {
+    case 0:
+        if (extract32(insn, 21,1)) {
+            handle_ldst_reg_roffset(s, insn);
+        } else {
+            disas_ldst_reg_imm(s, insn);
         }
+        break;
+    case 1:
+        handle_ldst_reg_unsigned_imm(s, insn);
+        break;
+    default:
+        unallocated_encoding(s);
+        break;
     }
 }
 

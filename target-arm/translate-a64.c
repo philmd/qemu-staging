@@ -258,23 +258,128 @@ static inline void gen_goto_tb(DisasContext *s, int n, uint64_t dest)
 /* C4.3.10 NZCV, Condition Flags
    this matches the ARM target semantic for flag variables,
    but it's not optimal for Aarch64. */
+
+static inline void gen_set_ZN64(TCGv_i64 result)
+{
+    /* Set ZF and NF based on a 64 bit result. This is alas fiddlier
+     * than the 32 bit equivalent.
+     */
+    TCGv_i64 flag = tcg_temp_new_i64();
+    tcg_gen_setcondi_i64(TCG_COND_NE, flag, result, 0);
+    tcg_gen_trunc_i64_i32(cpu_ZF, flag);
+
+    tcg_gen_shri_i64(flag, result, 32);
+    tcg_gen_trunc_i64_i32(cpu_NF, flag);
+    tcg_temp_free_i64(flag);
+}
+
 /* on !sf result must be passed clean (zero-ext) */
 static inline void gen_logic_CC(int sf, TCGv_i64 result)
 {
     if (sf) {
-        TCGv_i64 flag = tcg_temp_new_i64();
-        tcg_gen_setcondi_i64(TCG_COND_NE, flag, result, 0);
-        tcg_gen_trunc_i64_i32(cpu_ZF, flag);
-
-        tcg_gen_shri_i64(flag, result, 32);
-        tcg_gen_trunc_i64_i32(cpu_NF, flag);
-        tcg_temp_free_i64(flag);
+        gen_set_ZN64(result);
     } else {
         tcg_gen_trunc_i64_i32(cpu_ZF, result);
         tcg_gen_trunc_i64_i32(cpu_NF, result);
     }
     tcg_gen_movi_i32(cpu_CF, 0);
     tcg_gen_movi_i32(cpu_VF, 0);
+}
+
+/* dest = T0 + T1; compute C, N, V and Z flags */
+static void gen_add_CC(int sf, TCGv_i64 dest, TCGv_i64 t0, TCGv_i64 t1)
+{
+    if (sf) {
+        TCGv_i64 result, flag, tmp;
+        result = tcg_temp_new_i64();
+        flag = tcg_temp_new_i64();
+        tmp = tcg_temp_new_i64();
+
+        tcg_gen_movi_i64(tmp, 0);
+        tcg_gen_add2_i64(result, flag, t0, tmp, t1, tmp);
+
+        tcg_gen_trunc_i64_i32(cpu_CF, flag);
+
+        gen_set_ZN64(result);
+
+        tcg_gen_xor_i64(flag, result, t0);
+        tcg_gen_xor_i64(tmp, t0, t1);
+        tcg_gen_andc_i64(flag, flag, tmp);
+        tcg_temp_free_i64(tmp);
+        tcg_gen_shri_i64(flag, flag, 32);
+        tcg_gen_trunc_i64_i32(cpu_VF, flag);
+
+        tcg_gen_mov_i64(dest, result);
+        tcg_temp_free_i64(result);
+        tcg_temp_free_i64(flag);
+    } else {
+        /* 32 bit arithmetic */
+        TCGv_i32 t0_32 = tcg_temp_new_i32();
+        TCGv_i32 t1_32 = tcg_temp_new_i32();
+        TCGv_i32 tmp = tcg_temp_new_i32();
+
+        tcg_gen_movi_i32(tmp, 0);
+        tcg_gen_trunc_i64_i32(t0_32, t0);
+        tcg_gen_trunc_i64_i32(t1_32, t1);
+        tcg_gen_add2_i32(cpu_NF, cpu_CF, t0_32, tmp, t1_32, tmp);
+        tcg_gen_mov_i32(cpu_ZF, cpu_NF);
+        tcg_gen_xor_i32(cpu_VF, cpu_NF, t0_32);
+        tcg_gen_xor_i32(tmp, t0_32, t1_32);
+        tcg_gen_andc_i32(cpu_VF, cpu_VF, tmp);
+        tcg_gen_extu_i32_i64(dest, cpu_NF);
+
+        tcg_temp_free_i32(tmp);
+        tcg_temp_free_i32(t0_32);
+        tcg_temp_free_i32(t1_32);
+    }
+}
+
+/* dest = T0 - T1; compute C, N, V and Z flags */
+static void gen_sub_CC(int sf, TCGv_i64 dest, TCGv_i64 t0, TCGv_i64 t1)
+{
+    if (sf) {
+        /* 64 bit arithmetic */
+        TCGv_i64 result, flag, tmp;
+
+        result = tcg_temp_new_i64();
+        flag = tcg_temp_new_i64();
+        tcg_gen_sub_i64(result, t0, t1);
+
+        gen_set_ZN64(result);
+
+        tcg_gen_setcond_i64(TCG_COND_GEU, flag, t0, t1);
+        tcg_gen_trunc_i64_i32(cpu_CF, flag);
+
+        tcg_gen_xor_i64(flag, result, t0);
+        tmp = tcg_temp_new_i64();
+        tcg_gen_xor_i64(tmp, t0, t1);
+        tcg_gen_and_i64(flag, flag, tmp);
+        tcg_temp_free_i64(tmp);
+        tcg_gen_shri_i64(flag, flag, 32);
+        tcg_gen_trunc_i64_i32(cpu_VF, flag);
+        tcg_gen_mov_i64(dest, result);
+        tcg_temp_free_i64(flag);
+        tcg_temp_free_i64(result);
+    } else {
+        /* 32 bit arithmetic */
+        TCGv_i32 t0_32 = tcg_temp_new_i32();
+        TCGv_i32 t1_32 = tcg_temp_new_i32();
+        TCGv_i32 tmp;
+
+        tcg_gen_trunc_i64_i32(t0_32, t0);
+        tcg_gen_trunc_i64_i32(t1_32, t1);
+        tcg_gen_sub_i32(cpu_NF, t0_32, t1_32);
+        tcg_gen_mov_i32(cpu_ZF, cpu_NF);
+        tcg_gen_setcond_i32(TCG_COND_GEU, cpu_CF, t0_32, t1_32);
+        tcg_gen_xor_i32(cpu_VF, cpu_NF, t0_32);
+        tmp = tcg_temp_new_i32();
+        tcg_gen_xor_i32(tmp, t0_32, t1_32);
+        tcg_temp_free_i32(t0_32);
+        tcg_temp_free_i32(t1_32);
+        tcg_gen_and_i32(cpu_VF, cpu_VF, tmp);
+        tcg_temp_free_i32(tmp);
+        tcg_gen_extu_i32_i64(dest, cpu_NF);
+    }
 }
 
 static void gen_arith_CC_64(TCGv_i64 result,
@@ -1746,14 +1851,11 @@ static void disas_add_sub_imm(DisasContext *s, uint32_t insn)
     int shift = extract32(insn, 22, 2);
     bool setflags = extract32(insn, 29, 1);
     bool sub_op = extract32(insn, 30, 1);
-    bool is_32bit = !extract32(insn, 31, 1);
+    bool is_64bit = extract32(insn, 31, 1);
 
-    TCGv_i64 tcg_result = tcg_temp_new_i64();
     TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
     TCGv_i64 tcg_rd = setflags ? cpu_reg(s, rd):cpu_reg_sp(s, rd);
-
-    TCGv_i64 tcg_imm;
-    TCGv_i64 carry_in; // used for flag setting
+    TCGv_i64 tcg_result;
 
     switch (shift) {
     case 0x0:
@@ -1765,27 +1867,29 @@ static void disas_add_sub_imm(DisasContext *s, uint32_t insn)
         unallocated_encoding(s);
     }
 
-    if (sub_op) {
-        tcg_imm = tcg_const_i64(-imm);
-        carry_in = tcg_const_i64(1);
+    tcg_result = tcg_temp_new_i64();
+    if (!setflags) {
+        if (sub_op) {
+            tcg_gen_subi_i64(tcg_result, tcg_rn, imm);
+        } else {
+            tcg_gen_addi_i64(tcg_result, tcg_rn, imm);
+        }
     } else {
-        tcg_imm = tcg_const_i64(imm);
-        carry_in = tcg_const_i64(0);
+        TCGv_i64 tcg_imm = tcg_const_i64(imm);
+        if (sub_op) {
+            gen_sub_CC(is_64bit, tcg_result, tcg_rn, tcg_imm);
+        } else {
+            gen_add_CC(is_64bit, tcg_result, tcg_rn, tcg_imm);
+        }
+        tcg_temp_free_i64(tcg_imm);
     }
 
-    tcg_gen_add_i64(tcg_result, tcg_rn, tcg_imm);
-    if (setflags) {
-        gen_arith_CC(!is_32bit, tcg_result, tcg_rn, tcg_imm, carry_in);
-    }
-
-    if (is_32bit) {
-        tcg_gen_ext32u_i64(tcg_rd, tcg_result);
-    } else {
+    if (is_64bit) {
         tcg_gen_mov_i64(tcg_rd, tcg_result);
+    } else {
+        tcg_gen_ext32u_i64(tcg_rd, tcg_result);
     }
 
-    tcg_temp_free_i64(tcg_imm);
-    tcg_temp_free_i64(carry_in);
     tcg_temp_free_i64(tcg_result);
 }
 

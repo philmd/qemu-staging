@@ -135,7 +135,7 @@ static void gen_exception_insn(DisasContext *s, int offset, int excp)
 {
     gen_a64_set_pc_im(s->pc - offset);
     gen_exception(excp);
-    s->is_jmp = DISAS_JUMP;
+    s->is_jmp = DISAS_EXC;
 }
 
 static void unallocated_encoding(DisasContext *s)
@@ -867,8 +867,7 @@ static void disas_system(DisasContext *s, uint32_t insn)
 
 static void handle_svc(DisasContext *s, uint32_t insn)
 {
-    gen_a64_set_pc_im(s->pc);
-    s->is_jmp = DISAS_SWI;
+    gen_exception_insn(s, 0, EXCP_SWI);
 }
 
 /* C3.2.3 Exception generation
@@ -2536,11 +2535,6 @@ static void disas_a64_insn(CPUARMState *env, DisasContext *s)
 
     /* if we allocated any temporaries, free them here */
     free_tmp_a64(s);
-
-    if (unlikely(s->singlestep_enabled) && (s->is_jmp == DISAS_TB_JUMP)) {
-        /* go through the main loop for single step */
-        s->is_jmp = DISAS_JUMP;
-    }
 }
 
 void gen_intermediate_code_internal_a64(ARMCPU *cpu,

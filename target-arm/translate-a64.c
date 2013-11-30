@@ -1070,11 +1070,82 @@ static void disas_b_exc_sys(DisasContext *s, uint32_t insn)
     }
 }
 
-/* Load/store exclusive */
+/* C3.3.6 Load/store exclusive
+
+   31 30 29         24  23  22   21  20  16  15  14   10 9    5 4    0
+  +-----+-------------+----+---+----+------+----+-------+------+------+
+  | sz  | 0 0 1 0 0 0 | o2 | L | o1 |  Rs  | o0 |  Rt2  |  Rn  | Rt   |
+  +-----+-------------+----+---+----+------+----+-------+------+------+
+
+   sz: 00 -> 8 bit, 01 -> 16 bit, 10 -> 32 bit, 11 -> 64 bit
+   L: 0 -> store, 1 -> load
+   o2: 0 -> exclusive, 1 -> not
+   o1: 0 -> single register, 1 -> register pair
+   o0: 1 -> load-acquire/store-release, 0 -> not
+
+   o0 == 0 AND o2 == 1 is unallocated
+   o1 == 1 is unallocated exepct for 32 and 64 bit sizes
+ */
+
 static void disas_ldst_excl(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int rt2 = extract32(insn, 10, 5);
+    int rs = extract32(insn, 16, 5);
+    int size = extract32(insn, 30, 2);
+    bool is_ldacqstrel = extract32(insn, 15, 1);
+    bool is_excl = !extract32(insn, 23, 1);
+    bool is_pair = extract32(insn, 21, 1);
+    bool is_store = !extract32(insn, 22, 1);
+    TCGv_i64 tcg_addr;
+    TCGv_i64 tcg_rt, tcg_rt2;
+
+    if ((!is_excl && !is_ldacqstrel) ||
+        (is_pair && size < 2)) {
+        unallocated_encoding(s);
+    }
+
+    tcg_addr = tcg_temp_new_i64();
+    if (rn == 31) {
+        /* XXX check SP alignment */
+    }
+    tcg_gen_mov_i64(tcg_addr, cpu_reg_sp(s, rn));
+
+    /* Note that since TCG is single threaded load-acquire/store-release
+     * semantics require no extra handling.
+     */
+
+    // XXX is_excl needs proper handling : we currently treat
+    // load-exclusive as "always just load" and store-exclusive
+    // as "always just store and return success"
+
+    if (is_store && is_excl) {
+        /* XXX find out what status it wants */
+        tcg_gen_movi_i64(cpu_reg(s, rs), 0);
+    }
+
+    // XXX cpu_reg or cpu_reg_sp?
+    tcg_rt = cpu_reg(s, rt);
+
+    if (is_store) {
+        do_gpr_st(s, tcg_rt, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt, tcg_addr, size, false);
+    }
+
+    if (is_pair) {
+        tcg_gen_addi_i64(tcg_addr, tcg_addr, 1 << size);
+        tcg_rt2 = cpu_reg(s, rt2);
+        if (is_store) {
+            do_gpr_st(s, tcg_rt2, tcg_addr, size);
+        } else {
+            do_gpr_ld(s, tcg_rt2, tcg_addr, size, false);
+        }
+    }
+    tcg_temp_free_i64(tcg_addr);
 }
+
 
 /* C3.3.5 Load register (literal)
 

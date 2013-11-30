@@ -88,3 +88,13 @@ uint64_t HELPER(smulh)(uint64_t n, uint64_t m)
     muls64(&rl, &rh, n, m);
     return rh;
 }
+
+uint64_t HELPER(get_fpcr)(CPUARMState *env)
+{
+    return vfp_get_fpcr(env);
+}
+
+void HELPER(set_fpcr)(CPUARMState *env, uint64_t value)
+{
+    vfp_set_fpcr(env, value);
+}

@@ -1573,9 +1573,13 @@ static void handle_ldst_reg_roffset(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (extract32(opt, 1, 1) == 0) {
+        unallocated_encoding(s);
+        return;
+    }
+
     g_assert(extract32(insn, 10, 2)==2); /* only roffset */
     g_assert(extract32(insn, 26, 1)==0); /* not vector */
-    g_assert((opt==2 || opt==3));        /* only two opt forms */
 
     if (size == 2 &&  opc == 2) {
         /* pre-fetch */

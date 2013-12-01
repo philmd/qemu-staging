@@ -2353,7 +2353,7 @@ static void handle_add_sub_ext_reg(DisasContext *s, uint32_t insn)
     TCGv_i64 tcg_rm_ext = tcg_temp_new_i64();
     TCGv_i64 tcg_rd;
     TCGv_i64 tcg_rn;
-    TCGv_i64 carry_in;
+    TCGv_i64 tcg_result;
 
     /* non-flag setting ops may use SP */
     if (!setflags) {
@@ -2367,30 +2367,31 @@ static void handle_add_sub_ext_reg(DisasContext *s, uint32_t insn)
 
     ext_and_shift_reg(tcg_rm_ext, tcg_rm, option, imm3);
 
-    if (!sf) {
-        tcg_gen_ext32s_i64(tcg_rm_ext, tcg_rm_ext); // superflous?
-        tcg_gen_ext32s_i64(tcg_rn, tcg_rn);
-    }
+    tcg_result = tcg_temp_new_i64();
 
-    if (sub_op) {
-        tcg_gen_not_i64(tcg_rm, tcg_rm);
-        carry_in = tcg_const_i64(1);
+    if (!setflags) {
+        if (sub_op) {
+            tcg_gen_sub_i64(tcg_result, tcg_rn, tcg_rm_ext);
+        } else {
+            tcg_gen_add_i64(tcg_result, tcg_rn, tcg_rm_ext);
+        }
     } else {
-        carry_in = tcg_const_i64(0);
+        if (sub_op) {
+            gen_sub_CC(sf, tcg_result, tcg_rn, tcg_rm_ext);
+        } else {
+            gen_add_CC(sf, tcg_result, tcg_rn, tcg_rm_ext);
+        }
     }
 
-    tcg_gen_add_i64(tcg_rd, tcg_rn, tcg_rm_ext);
-    if (setflags) {
-        gen_arith_CC(sf, tcg_rd, tcg_rn, tcg_rm, carry_in);
+    if (sf) {
+        tcg_gen_mov_i64(tcg_rd, tcg_result);
+    } else {
+        tcg_gen_ext32u_i64(tcg_rd, tcg_result);
     }
 
-    if (!sf) {
-        tcg_gen_ext32u_i64(tcg_rd, tcg_rd);
-    }
-
+    tcg_temp_free_i64(tcg_result);
     tcg_temp_free_i64(tcg_rm_ext);
     tcg_temp_free_i64(tcg_rn);
-    tcg_temp_free_i64(carry_in);
 }
 
 /* C3.5.2 Add/subtract (shifted register)

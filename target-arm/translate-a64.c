@@ -1827,7 +1827,7 @@ static void disas_pc_rel_adr(DisasContext *s, uint32_t insn)
     int64_t offset; /* SignExtend(immhi:immlo) -> offset */
 
     page = insn & (1 << 31) ? 1 : 0;
-    offset = sextract32(insn, 5, 19) << 2 | extract32(insn, 29, 2);
+    offset = ((int64_t)sextract32(insn, 5, 19) << 2) | extract32(insn, 29, 2);
     rd = extract32(insn, 0, 5);
     base = s->pc - 4;
 

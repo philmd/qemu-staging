@@ -1259,6 +1259,9 @@ static void handle_ld_lit(DisasContext *s, uint32_t insn)
    s: 0 -> unsigned, 1 -> signed
  idx: 001 -> post-index, 011 -> pre-index, 010 -> signed off
 
+XXX update: supports V=1
+XXX diagram above is wrong, bits 31:30 are opc
+
 */
 static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
 {
@@ -1267,16 +1270,27 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
     int rt2 = extract32(insn, 10, 5);
     int64_t offset = sextract32(insn, 15, 7);
     int idx = extract32(insn, 23, 3);
-    int is_signed = extract32(insn, 30, 1);
-    int sf = extract32(insn, 31, 1);
-
-    int size = sf?3:2;
+    bool is_signed = false;
+    bool is_vector = extract32(insn, 26, 1);
+    int opc = extract32(insn, 30, 2);
+    int size;
     bool postindex = true;
     bool wback = false;
 
     TCGv_i64 tcg_rt = cpu_reg(s, rt);
     TCGv_i64 tcg_rt2 = cpu_reg(s, rt2);
     TCGv_i64 tcg_addr = tcg_temp_new_i64();
+
+    if (opc == 3) {
+        unallocated_encoding(s);
+        return;
+    }
+    if (is_vector) {
+        size = 2 + opc;
+    } else {
+        is_signed = opc & 1;
+        size = 2 + extract32(opc, 1, 1);
+    }
 
     switch (idx) {
     case 1: /* post-index */
@@ -1306,9 +1320,17 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
         tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
     }
 
-    do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+    if (is_vector) {
+        do_fp_ld(s, rt, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+    }
     tcg_gen_addi_i64(tcg_addr, tcg_addr, 1 << size);
-    do_gpr_ld(s, tcg_rt2, tcg_addr, size, is_signed);
+    if (is_vector) {
+        do_fp_ld(s, rt2, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt2, tcg_addr, size, is_signed);
+    }
 
     // XXX - this could be more optimal?
     tcg_gen_subi_i64(tcg_addr, tcg_addr, 1 << size);
@@ -1337,6 +1359,8 @@ static void handle_gpr_ldp(DisasContext *s, uint32_t insn)
   Rt, Rt2 = general purpose registers to be stored
   Rn = general purpose register containing address
   imm7 = signed offset (multiple of 4 or 8 depending on size)
+
+XXX update comment, we accept V=1
  */
 static void handle_gpr_stp(DisasContext *s, uint32_t insn)
 {
@@ -1345,14 +1369,29 @@ static void handle_gpr_stp(DisasContext *s, uint32_t insn)
     int rt2 = extract32(insn, 10, 5);
     int64_t offset = sextract32(insn, 15, 7);
     int type = extract32(insn, 23, 2);
-    int is_32bit = !extract32(insn, 30, 2);
+    bool is_vector = extract32(insn, 26, 1);
+    int opc = extract32(insn, 30, 2);
 
     TCGv_i64 tcg_rt = cpu_reg(s, rt);
     TCGv_i64 tcg_rt2 = cpu_reg(s, rt2);
     TCGv_i64 tcg_addr; /* calculated address */
     bool postindex = false;
     bool wback = false;
-    int size = is_32bit ? 2 : 3;
+    int size;
+
+    if (is_vector) {
+        if (opc == 3) {
+            unallocated_encoding(s);
+            return;
+        }
+        size = 2 + opc;
+    } else {
+        size = 2 + extract32(opc, 1, 1);
+        if (opc & 1) {
+            unallocated_encoding(s);
+            return;
+        }
+    }
 
     switch (type) {
     case 1: /* STP (post-index) */
@@ -1383,9 +1422,17 @@ static void handle_gpr_stp(DisasContext *s, uint32_t insn)
         tcg_gen_addi_i64(tcg_addr, tcg_addr, offset);
     }
 
-    do_gpr_st(s, tcg_rt, tcg_addr, size);
+    if (is_vector) {
+        do_fp_st(s, rt, tcg_addr, size);
+    } else {
+        do_gpr_st(s, tcg_rt, tcg_addr, size);
+    }
     tcg_gen_addi_i64(tcg_addr, tcg_addr, 1 << size);
-    do_gpr_st(s, tcg_rt2, tcg_addr, size);
+    if (is_vector) {
+        do_fp_st(s, rt2, tcg_addr, size);
+    } else {
+        do_gpr_st(s, tcg_rt2, tcg_addr, size);
+    }
     // XXX - this could be more optimal?
     tcg_gen_subi_i64(tcg_addr, tcg_addr, 1 << size);
 
@@ -1427,6 +1474,8 @@ static void handle_gpr_stp(DisasContext *s, uint32_t insn)
   index_mode = 10100011 -> post-index
                10100111 -> pre-index
                10100101 -> signed offset
+
+XXX also handles vector forms, comment needs fixing
 
  */
 static void disas_ldst_pair(DisasContext *s, uint32_t insn)

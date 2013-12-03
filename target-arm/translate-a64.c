@@ -1268,6 +1268,107 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
     }
 }
 
+/*
+  C3.3.8 Load/store (immediate post-indexed)
+  C3.3.9 Load/store (immediate pre-indexed)
+  C3.3.12 Load/store (unscaled immediate)
+
+  31 30 29   27  26 25 24 23 22 21  20    12 11 10 9    5 4    0
+  +----+-------+---+-----+-----+---+--------+-----+------+------+
+  |size| 1 1 1 | V | 0 0 | opc | 0 |  imm9  | idx |  Rn  |  Rt  |
+  +----+-------+---+-----+-----+---+--------+-----+------+------+
+
+  idx = 01 -> post-indexed, 11 pre-indexed, 00 unscaled immediate (no writeback)
+  V = 0 -> non-vector
+  size: 00 -> 8 bit, 01 -> 16 bit, 10 -> 32 bit, 11 -> 64bit
+  opc: 00 -> store, 01 -> loadu, 10 -> loads 64, 11 -> loads 32
+*/
+static void handle_ldst_reg_imm9(DisasContext *s, uint32_t insn)
+{
+    int rt = extract32(insn, 0, 5);
+    int rn = extract32(insn, 5, 5);
+    int imm9 = sextract32(insn, 12, 9);
+    int opc = extract32(insn, 22, 2);
+    int size = extract32(insn, 30, 2);
+    int idx = extract32(insn, 10, 2);
+    bool is_signed = false;
+    bool is_store = false;
+    bool is_extended = false;
+    bool is_vector = extract32(insn, 26, 1);
+    bool post_index;
+    bool writeback;
+
+    TCGv_i64 tcg_rt = cpu_reg(s, rt);
+    TCGv_i64 tcg_rn = cpu_reg_sp(s, rn);
+    TCGv_i64 tcg_addr;
+
+    if (is_vector) {
+        unsupported_encoding(s, insn);
+        return;
+    }
+
+    switch (idx) {
+    case 0:
+        post_index = false;
+        writeback = false;
+        break;
+    case 1:
+        post_index = true;
+        writeback = true;
+        break;
+    case 3:
+        post_index = false;
+        writeback = true;
+        break;
+    case 2:
+        g_assert(false);
+        break;
+    }
+
+    switch (opc) {
+    case 0:
+        is_store = true;
+        break;
+    case 1:
+        is_store = false;
+        is_signed = false;
+        break;
+    case 2:
+        is_store = false;
+        is_signed = true;
+        is_extended = true;
+        break;
+    case 3:
+        is_store = false;
+        is_signed = true;
+        break;
+    }
+
+    tcg_addr = tcg_temp_new_i64();
+    tcg_gen_mov_i64(tcg_addr, tcg_rn);
+
+    if (!post_index) {
+        tcg_gen_addi_i64(tcg_addr, tcg_addr, imm9);
+    }
+
+    if (is_store) {
+        do_gpr_st(s, tcg_rt, tcg_addr, size);
+    } else {
+        do_gpr_ld(s, tcg_rt, tcg_addr, size, is_signed);
+        if (is_extended) {
+            unsupported_encoding(s, insn);
+        }
+    }
+
+    if (writeback) {
+        if (post_index) {
+            tcg_gen_addi_i64(tcg_addr, tcg_addr, imm9);
+        }
+        tcg_gen_mov_i64(tcg_rn, tcg_addr);
+    }
+
+    tcg_temp_free_i64(tcg_addr);
+}
 
 /*
   C3.3.10 Load/store (register offset)
@@ -1425,6 +1526,25 @@ static void handle_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn)
     tcg_temp_free_i64(tcg_addr);
 }
 
+/* Load/store register (immediate forms) */
+static void disas_ldst_reg_imm(DisasContext *s, uint32_t insn)
+{
+    switch (extract32(insn, 10, 2)) {
+    case 0: case 1: case 3:
+        /* Load/store register (unscaled immediate) */
+        /* Load/store immediate pre/post-indexed */
+        handle_ldst_reg_imm9(s, insn);
+        break;
+    case 2:
+        /* Load/store register unprivileged */
+        unsupported_encoding(s, insn);
+        break;
+    default:
+        unallocated_encoding(s);
+        break;
+    }
+}
+
 /* Load/store register (all forms) */
 static void disas_ldst_reg(DisasContext *s, uint32_t insn)
 {
@@ -1433,7 +1553,7 @@ static void disas_ldst_reg(DisasContext *s, uint32_t insn)
         if (extract32(insn, 21,1)) {
             handle_ldst_reg_roffset(s, insn);
         } else {
-            unsupported_encoding(s, insn);
+            disas_ldst_reg_imm(s, insn);
         }
         break;
     case 1:

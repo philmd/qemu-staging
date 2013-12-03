@@ -215,10 +215,36 @@ static void disas_comp_b_imm(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
-/* Test & branch (immediate) */
+/* C3.2.5 Test & branch (immediate)
+ *   31  30         25  24  23   19 18          5 4    0
+ * +----+-------------+----+-------+-------------+------+
+ * | b5 | 0 1 1 0 1 1 | op |  b40  |    imm14    |  Rt  |
+ * +----+-------------+----+-------+-------------+------+
+ */
 static void disas_test_b_imm(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    unsigned int bit_pos, op, rt;
+    uint64_t addr;
+    int label_nomatch;
+    TCGv_i64 tcg_cmp;
+
+    bit_pos = (extract32(insn, 31, 1) << 5) | extract32(insn, 19, 5);
+    op = extract32(insn, 24, 1);
+    addr = s->pc + sextract32(insn, 5, 14) * 4 - 4;
+    rt = extract32(insn, 0, 5);
+
+    tcg_cmp = tcg_temp_new_i64();
+    tcg_gen_andi_i64(tcg_cmp, cpu_reg(s, rt), (1ULL << bit_pos));
+    label_nomatch = gen_new_label();
+    if (op) { /* TBNZ */
+        tcg_gen_brcondi_i64(TCG_COND_EQ, tcg_cmp, 0, label_nomatch);
+    } else { /* TBZ */
+        tcg_gen_brcondi_i64(TCG_COND_NE, tcg_cmp, 0, label_nomatch);
+    }
+    tcg_temp_free_i64(tcg_cmp);
+    gen_goto_tb(s, 0, addr);
+    gen_set_label(label_nomatch);
+    gen_goto_tb(s, 1, s->pc);
 }
 
 /* C3.2.2 / C5.6.19 Conditional branch (immediate)

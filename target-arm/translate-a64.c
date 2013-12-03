@@ -707,10 +707,56 @@ static void disas_cc_reg(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
-/* Conditional select */
+/* C3.5.6 Conditional select */
 static void disas_cond_select(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    /*
+     * 31 30 29 28 27 26 25 24 23 22 21 20  16 15  12 11 10 9  5 4  0
+     * sf op  S  1  1  0  1  0  1  0  0   Rm    cond   op2   Rn   Rd
+     *       [0]
+     * op -> else_inv, op2 -> else_inc
+     */
+    unsigned int sf, else_inv, rm, cond, else_inc, rn, rd;
+    TCGv_i64 tcg_rd;
+    if (extract32(insn, 21, 9) != 0x0d4 || (insn & (1 << 11))) {
+        unallocated_encoding(s);
+        return;
+    }
+    sf = (insn & (1 << 31)) ? 1 : 0;
+    else_inv = extract32(insn, 30, 1);
+    rm = extract32(insn, 16, 5);
+    cond = extract32(insn, 12, 4);
+    else_inc = extract32(insn, 10, 1);
+    rn = extract32(insn, 5, 5);
+    rd = extract32(insn, 0, 5);
+    tcg_rd = cpu_reg(s, rd);
+
+    if (cond >= 0x0e) { /* condition "always" */
+        read_cpu_reg(s, tcg_rd, rn, sf);
+    } else {
+        int label_nomatch, label_continue;
+        label_nomatch = gen_new_label();
+        label_continue = gen_new_label();
+
+        arm_gen_test_cc(cond ^ 1, label_nomatch);
+        /* match: */
+        read_cpu_reg(s, tcg_rd, rn, sf);
+        tcg_gen_br(label_continue);
+        /* nomatch: */
+        gen_set_label(label_nomatch);
+        read_cpu_reg(s, tcg_rd, rm, sf);
+        if (else_inv) {
+            tcg_gen_not_i64(tcg_rd, tcg_rd);
+        }
+        if (else_inc) {
+            tcg_gen_addi_i64(tcg_rd, tcg_rd, 1);
+        }
+        if (!sf) {
+            tcg_gen_ext32u_i64(tcg_rd, tcg_rd);
+        }
+        /* continue: */
+        gen_set_label(label_continue);
+    }
 }
 
 /* Data-processing (1 source) */

@@ -5545,6 +5545,154 @@ static void disas_simd_shift_imm(DisasContext *s, uint32_t insn)
     unsupported_encoding(s, insn);
 }
 
+static void handle_3rd_widening(DisasContext *s, int is_q, int is_u, int size,
+                                int opcode, int rd, int rn, int rm)
+{
+    /* 3-reg-different widening insns: 64 x 64 -> 128 */
+    TCGv_i64 tcg_res[2];
+    int pass, accop;
+
+    tcg_res[0] = tcg_temp_new_i64();
+    tcg_res[1] = tcg_temp_new_i64();
+
+    /* Does this op do an adding accumulate, a subtracting accumulate,
+     * or no accumulate at all?
+     */
+    switch (opcode) {
+    case 5:
+    case 8:
+    case 9:
+        accop = 1;
+        break;
+    case 10:
+    case 11:
+        accop = -1;
+        break;
+    default:
+        accop = 0;
+        break;
+    }
+
+    if (accop != 0) {
+        read_vec_element(s, tcg_res[0], rd, 0, MO_64);
+        read_vec_element(s, tcg_res[1], rd, 1, MO_64);
+    }
+
+    /* size == 2 means two 32x32->64 operations; this is worth special
+     * casing because we can generally handle it inline.
+     */
+    if (size == 2) {
+        for (pass = 0; pass < 2; pass++) {
+            TCGv_i64 tcg_op1 = tcg_temp_new_i64();
+            TCGv_i64 tcg_op2 = tcg_temp_new_i64();
+            TCGv_i64 tcg_passres;
+            TCGMemOp memop = MO_32 | (is_u ? 0 : MO_SIGN);
+
+            int elt = pass + is_q * 2;
+
+            read_vec_element(s, tcg_op1, rn, elt, memop);
+            read_vec_element(s, tcg_op2, rm, elt, memop);
+
+            if (accop == 0) {
+                tcg_passres = tcg_res[pass];
+            } else {
+                tcg_passres = tcg_temp_new_i64();
+            }
+
+            switch (opcode) {
+            case 8: /* SMLAL, SMLAL2, UMLAL, UMLAL2 */
+            case 10: /* SMLSL, SMLSL2, UMLSL, UMLSL2 */
+            case 12: /* UMULL, UMULL2, SMULL, SMULL2 */
+                tcg_gen_mul_i64(tcg_passres, tcg_op1, tcg_op2);
+                break;
+            default:
+                g_assert_not_reached();
+            }
+
+            if (accop > 0) {
+                tcg_gen_add_i64(tcg_res[pass], tcg_res[pass], tcg_passres);
+                tcg_temp_free_i64(tcg_passres);
+            } else if (accop < 0) {
+                tcg_gen_sub_i64(tcg_res[pass], tcg_res[pass], tcg_passres);
+                tcg_temp_free_i64(tcg_passres);
+            }
+
+            tcg_temp_free_i64(tcg_op1);
+            tcg_temp_free_i64(tcg_op2);
+        }
+    } else {
+        /* size 0 or 1, generally helper functions */
+        for (pass = 0; pass < 2; pass++) {
+            TCGv_i64 tcg_tmp = tcg_temp_new_i64();
+            TCGv_i32 tcg_op1 = tcg_temp_new_i32();
+            TCGv_i32 tcg_op2 = tcg_temp_new_i32();
+            TCGv_i64 tcg_passres;
+            int elt = pass + is_q * 2;
+
+            read_vec_element(s, tcg_tmp, rn, elt, MO_32);
+            tcg_gen_trunc_i64_i32(tcg_op1, tcg_tmp);
+            read_vec_element(s, tcg_tmp, rm, elt, MO_32);
+            tcg_gen_trunc_i64_i32(tcg_op2, tcg_tmp);
+            tcg_temp_free_i64(tcg_tmp);
+
+            if (accop == 0) {
+                tcg_passres = tcg_res[pass];
+            } else {
+                tcg_passres = tcg_temp_new_i64();
+            }
+
+            switch (opcode) {
+            case 8: /* SMLAL, SMLAL2, UMLAL, UMLAL2 */
+            case 10: /* SMLSL, SMLSL2, UMLSL, UMLSL2 */
+            case 12: /* UMULL, UMULL2, SMULL, SMULL2 */
+                if (size == 0) {
+                    if (is_u) {
+                        gen_helper_neon_mull_u8(tcg_passres, tcg_op1, tcg_op2);
+                    } else {
+                        gen_helper_neon_mull_s8(tcg_passres, tcg_op1, tcg_op2);
+                    }
+                } else {
+                    if (is_u) {
+                        gen_helper_neon_mull_u16(tcg_passres, tcg_op1, tcg_op2);
+                    } else {
+                        gen_helper_neon_mull_s16(tcg_passres, tcg_op1, tcg_op2);
+                    }
+                }
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            tcg_temp_free_i32(tcg_op1);
+            tcg_temp_free_i32(tcg_op2);
+
+            if (accop > 0) {
+                if (size == 0) {
+                    gen_helper_neon_addl_u16(tcg_res[pass], tcg_res[pass],
+                                             tcg_passres);
+                } else {
+                    gen_helper_neon_addl_u32(tcg_res[pass], tcg_res[pass],
+                                             tcg_passres);
+                }
+                tcg_temp_free_i64(tcg_passres);
+            } else if (accop < 0) {
+                if (size == 0) {
+                    gen_helper_neon_subl_u16(tcg_res[pass], tcg_res[pass],
+                                             tcg_passres);
+                } else {
+                    gen_helper_neon_subl_u32(tcg_res[pass], tcg_res[pass],
+                                             tcg_passres);
+                }
+                tcg_temp_free_i64(tcg_passres);
+            }
+        }
+    }
+
+    write_vec_element(s, tcg_res[0], rd, 0, MO_64);
+    write_vec_element(s, tcg_res[1], rd, 1, MO_64);
+    tcg_temp_free_i64(tcg_res[0]);
+    tcg_temp_free_i64(tcg_res[1]);
+}
+
 /* C3.6.15 AdvSIMD three different
  *   31  30  29 28       24 23  22  21 20  16 15    12 11 10 9    5 4    0
  * +---+---+---+-----------+------+---+------+--------+-----+------+------+
@@ -5553,7 +5701,65 @@ static void disas_simd_shift_imm(DisasContext *s, uint32_t insn)
  */
 static void disas_simd_three_reg_diff(DisasContext *s, uint32_t insn)
 {
-    unsupported_encoding(s, insn);
+    /* Instructions in this group fall into three basic classes
+     * (in each case with the operation working on each element in
+     * the input vectors):
+     * (1) widening 64 x 64 -> 128 (with possibly Vd as an extra
+     *     128 bit input)
+     * (2) wide 64 x 128 -> 128
+     * (3) narrowing 128 x 128 -> 64
+     * Here we do initial decode, catch unallocated cases and
+     * dispatch to separate functions for each class.
+     */
+    int is_q = extract32(insn, 30, 1);
+    int is_u = extract32(insn, 29, 1);
+    int size = extract32(insn, 22, 2);
+    int opcode = extract32(insn, 12, 4);
+    int rm = extract32(insn, 16, 5);
+    int rn = extract32(insn, 5, 5);
+    int rd = extract32(insn, 0, 5);
+
+    switch (opcode) {
+    case 1: /* SADDW, SADDW2, UADDW, UADDW2 */
+    case 3: /* SSUBW, SSUBW2, USUBW, USUBW2 */
+        /* 64 x 128 -> 128 */
+        unsupported_encoding(s, insn);
+        break;
+    case 4: /* ADDHN, ADDHN2, RADDHN, RADDHN2 */
+    case 6: /* SUBHN, SUBHN2, RSUBHN, RSUBHN2 */
+        /* 128 x 128 -> 64 */
+        unsupported_encoding(s, insn);
+        break;
+    case 9:
+    case 11:
+    case 13:
+    case 14:
+        if (is_u) {
+            unallocated_encoding(s);
+            return;
+        }
+        /* fall through */
+    case 0:
+    case 2:
+    case 5:
+    case 7:
+        unsupported_encoding(s, insn);
+        break;
+    case 8:
+    case 10:
+    case 12:
+        /* 64 x 64 -> 128 */
+        if (size == 3) {
+            unallocated_encoding(s);
+            return;
+        }
+        handle_3rd_widening(s, is_q, is_u, size, opcode, rd, rn, rm);
+        break;
+    default:
+        /* opcode 15 not allocated */
+        unallocated_encoding(s);
+        break;
+    }
 }
 
 /* C3.6.16 AdvSIMD three same

@@ -7474,6 +7474,46 @@ static void handle_2misc_narrow(DisasContext *s, int opcode, bool u, bool is_q,
     }
 }
 
+static void handle_rev(DisasContext *s, int opcode, bool u,
+                       bool is_q, int size, int rn, int rd)
+{
+    int op = (opcode & 1) << 1 | u;
+    int opsz = op + size;
+    int ibits = 3 - opsz;
+    int revmask = (1 << ibits) - 1;
+    int dsize = is_q ? 128 : 64;
+    int esize = 8 << size;
+    int elements = dsize / esize;
+    int i;
+    TCGv_i64 tcg_rd_hi, tcg_rd, tcg_rn;
+
+    if (opsz >= 3) {
+        unallocated_encoding(s);
+        return;
+    }
+
+    tcg_rn = tcg_temp_new_i64();
+    tcg_rd = tcg_const_i64(0);
+    tcg_rd_hi = tcg_const_i64(0);
+
+    for (i = 0; i < elements; i++) {
+        int e_rev = (i & 0xf) ^ revmask;
+        int off = e_rev * esize;
+        read_vec_element(s, tcg_rn, rn, i, size);
+        if (off >= 64) {
+            tcg_gen_deposit_i64(tcg_rd_hi, tcg_rd_hi, tcg_rn, off - 64, esize);
+        } else {
+            tcg_gen_deposit_i64(tcg_rd, tcg_rd, tcg_rn, off, esize);
+        }
+    }
+    write_vec_element(s, tcg_rd, rd, 0, MO_64);
+    write_vec_element(s, tcg_rd_hi, rd, 1, MO_64);
+
+    tcg_temp_free_i64(tcg_rd_hi);
+    tcg_temp_free_i64(tcg_rd);
+    tcg_temp_free_i64(tcg_rn);
+}
+
 /* C3.6.17 AdvSIMD two reg misc
  *   31  30  29 28       24 23  22 21       17 16    12 11 10 9    5 4    0
  * +---+---+---+-----------+------+-----------+--------+-----+------+------+
@@ -7492,7 +7532,7 @@ static void disas_simd_two_reg_misc(DisasContext *s, uint32_t insn)
     switch (opcode) {
     case 0x0: /* REV64, REV32 */
     case 0x1: /* REV16 */
-        unsupported_encoding(s, insn);
+        handle_rev(s, opcode, u, is_q, size, rn, rd);
         return;
     case 0x5: /* CNT, NOT, RBIT */
         if (u && size == 0) {

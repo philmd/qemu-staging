@@ -871,6 +871,23 @@ static void do_vec_ld(DisasContext *s, int destidx, int element,
     tcg_temp_free_i64(tcg_tmp);
 }
 
+/* Check that FP/Neon access is enabled. If it is, return
+ * true. If not, emit code to generate an appropriate exception,
+ * and return false; the caller should not emit any code for
+ * the instruction. Note that this check must happen after all
+ * unallocated-encoding checks (otherwise the syndrome information
+ * for the resulting exception will be incorrect).
+ */
+static inline bool fp_access_check(DisasContext *s)
+{
+    if (s->cpacr_fpen) {
+        return true;
+    }
+
+    gen_exception_insn(s, 4, EXCP_UDEF, syn_fp_access_trap(1, 0xe, false));
+    return false;
+}
+
 /*
  * This utility function is for doing register extension with an
  * optional shift. You will likely want to pass a temporary for the
@@ -1709,6 +1726,9 @@ static void disas_ld_lit(DisasContext *s, uint32_t insn)
             return;
         }
         size = 2 + opc;
+        if (!fp_access_check(s)) {
+            return;
+        }
     } else {
         if (opc == 3) {
             /* PRFM (literal) : prefetch */
@@ -1818,6 +1838,10 @@ static void disas_ldst_pair(DisasContext *s, uint32_t insn)
         break;
     }
 
+    if (is_vector && !fp_access_check(s)) {
+        return;
+    }
+
     offset <<= size;
 
     if (rn == 31) {
@@ -1909,6 +1933,9 @@ static void disas_ldst_reg_imm9(DisasContext *s, uint32_t insn)
             return;
         }
         is_store = ((opc & 1) == 0);
+        if (!fp_access_check(s)) {
+            return;
+        }
     } else {
         if (size == 3 && opc == 2) {
             /* PRFM - prefetch */
@@ -2024,6 +2051,9 @@ static void disas_ldst_reg_roffset(DisasContext *s, uint32_t insn)
             return;
         }
         is_store = !extract32(opc, 0, 1);
+        if (!fp_access_check(s)) {
+            return;
+        }
     } else {
         if (size == 3 && opc == 2) {
             /* PRFM - prefetch */
@@ -2104,6 +2134,9 @@ static void disas_ldst_reg_unsigned_imm(DisasContext *s, uint32_t insn)
             return;
         }
         is_store = !extract32(opc, 0, 1);
+        if (!fp_access_check(s)) {
+            return;
+        }
     } else {
         if (size == 3 && opc == 2) {
             /* PRFM - prefetch */
@@ -2261,6 +2294,10 @@ static void disas_ldst_multiple_struct(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     if (rn == 31) {
         gen_check_sp_alignment(s);
     }
@@ -2385,6 +2422,10 @@ static void disas_ldst_single_struct(DisasContext *s, uint32_t insn)
         break;
     default:
         g_assert_not_reached();
+    }
+
+    if (!fp_access_check(s)) {
+        return;
     }
 
     ebytes = 1 << scale;
@@ -3864,6 +3905,10 @@ static void disas_fp_compare(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     handle_fp_compare(s, type, rn, rm, opc & 1, opc & 2);
 }
 
@@ -3889,6 +3934,10 @@ static void disas_fp_ccomp(DisasContext *s, uint32_t insn)
 
     if (mos || type > 1) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -3945,6 +3994,10 @@ static void disas_fp_csel(DisasContext *s, uint32_t insn)
 
     if (mos || type > 1) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -4165,6 +4218,10 @@ static void disas_fp_1src(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         handle_fp_fcvt(s, opcode, rd, rn, dtype, type);
         break;
     }
@@ -4174,9 +4231,17 @@ static void disas_fp_1src(DisasContext *s, uint32_t insn)
         /* 32-to-32 and 64-to-64 ops */
         switch (type) {
         case 0:
+            if (!fp_access_check(s)) {
+                return;
+            }
+
             handle_fp_1src_single(s, opcode, rd, rn);
             break;
         case 1:
+            if (!fp_access_check(s)) {
+                return;
+            }
+
             handle_fp_1src_double(s, opcode, rd, rn);
             break;
         default:
@@ -4316,9 +4381,15 @@ static void disas_fp_2src(DisasContext *s, uint32_t insn)
 
     switch (type) {
     case 0:
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fp_2src_single(s, opcode, rd, rn, rm);
         break;
     case 1:
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fp_2src_double(s, opcode, rd, rn, rm);
         break;
     default:
@@ -4420,9 +4491,15 @@ static void disas_fp_3src(DisasContext *s, uint32_t insn)
 
     switch (type) {
     case 0:
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fp_3src_single(s, o0, o1, rd, rn, rm, ra);
         break;
     case 1:
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fp_3src_double(s, o0, o1, rd, rn, rm, ra);
         break;
     default:
@@ -4446,6 +4523,10 @@ static void disas_fp_imm(DisasContext *s, uint32_t insn)
 
     if (is_double > 1) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -4635,6 +4716,10 @@ static void disas_fp_fixed_conv(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     handle_fpfpcvt(s, rd, rn, opcode, itof, FPROUNDING_ZERO, scale, sf, type);
 }
 
@@ -4734,6 +4819,9 @@ static void disas_fp_int_conv(DisasContext *s, uint32_t insn)
             break;
         }
 
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fmov(s, rd, rn, type, itof);
     } else {
         /* actual FP conversions */
@@ -4744,6 +4832,9 @@ static void disas_fp_int_conv(DisasContext *s, uint32_t insn)
             return;
         }
 
+        if (!fp_access_check(s)) {
+            return;
+        }
         handle_fpfpcvt(s, rd, rn, opcode, itof, rmode, 64, sf, type);
     }
 }
@@ -4844,6 +4935,10 @@ static void disas_simd_ext(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     tcg_resh = tcg_temp_new_i64();
     tcg_resl = tcg_temp_new_i64();
 
@@ -4914,6 +5009,10 @@ static void disas_simd_tb(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     /* This does a table lookup: for every byte element in the input
      * we index into a table formed from up to four vector registers,
      * and then the output is the result of the lookups. Our helper
@@ -4981,6 +5080,10 @@ static void disas_simd_zip_trn(DisasContext *s, uint32_t insn)
 
     if (opcode == 0 || (size == 3 && !is_q)) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -5117,6 +5220,10 @@ static void disas_simd_across_lanes(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     esize = 8 << size;
     elements = (is_q ? 128 : 64) / esize;
 
@@ -5249,6 +5356,10 @@ static void handle_simd_dupe(DisasContext *s, int is_q, int rd, int rn,
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     index = imm5 >> (size + 1);
 
     tmp = tcg_temp_new_i64();
@@ -5280,6 +5391,10 @@ static void handle_simd_dupes(DisasContext *s, int rd, int rn,
 
     if (size > 3) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -5315,6 +5430,11 @@ static void handle_simd_dupg(DisasContext *s, int is_q, int rd, int rn,
         unallocated_encoding(s);
         return;
     }
+
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     for (i = 0; i < elements; i++) {
         write_vec_element(s, cpu_reg(s, rn), rd, i, size);
     }
@@ -5344,6 +5464,11 @@ static void handle_simd_inse(DisasContext *s, int rd, int rn,
         unallocated_encoding(s);
         return;
     }
+
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     dst_index = extract32(imm5, 1+size, 5);
     src_index = extract32(imm4, size, 4);
 
@@ -5373,6 +5498,10 @@ static void handle_simd_insg(DisasContext *s, int rd, int rn, int imm5)
 
     if (size > 3) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -5413,6 +5542,11 @@ static void handle_simd_umov_smov(DisasContext *s, int is_q, int is_signed,
             return;
         }
     }
+
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     element = extract32(imm5, 1+size, 4);
 
     tcg_rd = cpu_reg(s, rd);
@@ -5502,6 +5636,10 @@ static void disas_simd_mod_imm(DisasContext *s, uint32_t insn)
 
     if (o2 != 0 || ((cmode == 0xf) && is_neg && !is_q)) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -5653,6 +5791,10 @@ static void disas_simd_scalar_pairwise(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         TCGV_UNUSED_PTR(fpst);
         break;
     case 0xc: /* FMAXNMP */
@@ -5665,6 +5807,10 @@ static void disas_simd_scalar_pairwise(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         size = extract32(size, 0, 1) ? 3 : 2;
         fpst = get_fpstatus_ptr();
         break;
@@ -5867,6 +6013,10 @@ static void handle_scalar_simd_shri(DisasContext *s,
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     switch (opcode) {
     case 0x02: /* SSRA / USRA (accumulate) */
         accumulate = true;
@@ -5914,6 +6064,10 @@ static void handle_scalar_simd_shli(DisasContext *s, bool insert,
 
     if (!extract32(immh, 3, 1)) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -5992,6 +6146,10 @@ static void disas_simd_scalar_three_reg_diff(DisasContext *s, uint32_t insn)
         break;
     default:
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -6379,6 +6537,10 @@ static void disas_simd_scalar_three_reg_same(DisasContext *s, uint32_t insn)
             return;
         }
 
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         handle_3same_float(s, extract32(size, 0, 1), 1, fpopcode, rd, rn, rm);
         return;
     }
@@ -6408,6 +6570,10 @@ static void disas_simd_scalar_three_reg_same(DisasContext *s, uint32_t insn)
         break;
     default:
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -6561,7 +6727,13 @@ static void handle_2misc_fcmp_zero(DisasContext *s, int opcode,
                                    int size, int rn, int rd)
 {
     bool is_double = (size == 3);
-    TCGv_ptr fpst = get_fpstatus_ptr();
+    TCGv_ptr fpst;
+
+    if (!fp_access_check(s)) {
+        return;
+    }
+
+    fpst = get_fpstatus_ptr();
 
     if (is_double) {
         TCGv_i64 tcg_op = tcg_temp_new_i64();
@@ -6743,6 +6915,10 @@ static void disas_simd_scalar_two_reg_misc(DisasContext *s, uint32_t insn)
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     if (size == 3) {
         TCGv_i64 tcg_rn = read_fp_dreg(s, rn);
         TCGv_i64 tcg_rd = tcg_temp_new_i64();
@@ -6782,6 +6958,10 @@ static void handle_vec_simd_shri(DisasContext *s, bool is_q, bool is_u,
 
     if (size > 3 && !is_q) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -6849,6 +7029,10 @@ static void handle_vec_simd_shli(DisasContext *s, bool is_q, bool insert,
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     for (i = 0; i < elements; i++) {
         read_vec_element(s, tcg_rn, rn, i, size);
         if (insert) {
@@ -6881,6 +7065,10 @@ static void handle_vec_simd_wshli(DisasContext *s, bool is_q, bool is_u,
 
     if (size >= 3) {
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -7173,6 +7361,10 @@ static void disas_simd_three_reg_diff(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         handle_3rd_widening(s, is_q, is_u, size, opcode, rd, rn, rm);
         break;
     default:
@@ -7191,11 +7383,15 @@ static void disas_simd_3same_logic(DisasContext *s, uint32_t insn)
     int size = extract32(insn, 22, 2);
     bool is_u = extract32(insn, 29, 1);
     bool is_q = extract32(insn, 30, 1);
-    TCGv_i64 tcg_op1 = tcg_temp_new_i64();
-    TCGv_i64 tcg_op2 = tcg_temp_new_i64();
-    TCGv_i64 tcg_res[2];
+    TCGv_i64 tcg_op1, tcg_op2, tcg_res[2];
     int pass;
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
+    tcg_op1 = tcg_temp_new_i64();
+    tcg_op2 = tcg_temp_new_i64();
     tcg_res[0] = tcg_temp_new_i64();
     tcg_res[1] = tcg_temp_new_i64();
 
@@ -7296,6 +7492,10 @@ static void handle_simd_3same_pair(DisasContext *s, int is_q, int u, int opcode,
         fpst = get_fpstatus_ptr();
     } else {
         TCGV_UNUSED_PTR(fpst);
+    }
+
+    if (!fp_access_check(s)) {
+        return;
     }
 
     /* These operations work on the concatenated rm:rn, with each pair of
@@ -7490,6 +7690,10 @@ static void disas_simd_3same_float(DisasContext *s, uint32_t insn)
     case 0x5f: /* FDIV */
     case 0x7a: /* FABD */
     case 0x7c: /* FCMGT */
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         handle_3same_float(s, size, elements, fpopcode, rd, rn, rm);
         return;
     default:
@@ -7542,6 +7746,10 @@ static void disas_simd_3same_int(DisasContext *s, uint32_t insn)
             return;
         }
         break;
+    }
+
+    if (!fp_access_check(s)) {
+        return;
     }
 
     if (size == 3) {
@@ -7936,6 +8144,10 @@ static void handle_rev(DisasContext *s, int opcode, bool u,
         return;
     }
 
+    if (!fp_access_check(s)) {
+        return;
+    }
+
     if (size == 0) {
         /* Special case bytes, use bswap op on each group of elements */
         int groups = dsize / (8 << grp_size);
@@ -8031,6 +8243,10 @@ static void disas_simd_two_reg_misc(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+        if (!fp_access_check(s)) {
+            return;
+        }
+
         handle_2misc_narrow(s, opcode, u, is_q, size, rn, rd);
         return;
     case 0x2: /* SADDLP, UADDLP */
@@ -8136,6 +8352,10 @@ static void disas_simd_two_reg_misc(DisasContext *s, uint32_t insn)
     }
     default:
         unallocated_encoding(s);
+        return;
+    }
+
+    if (!fp_access_check(s)) {
         return;
     }
 
@@ -8398,6 +8618,10 @@ static void disas_simd_indexed(DisasContext *s, uint32_t insn)
             unallocated_encoding(s);
             return;
         }
+    }
+
+    if (!fp_access_check(s)) {
+        return;
     }
 
     if (is_fp) {
@@ -8898,7 +9122,7 @@ void gen_intermediate_code_internal_a64(ARMCPU *cpu,
 #if !defined(CONFIG_USER_ONLY)
     dc->user = (ARM_TBFLAG_AA64_EL(tb->flags) == 0);
 #endif
-    dc->vfp_enabled = 0;
+    dc->cpacr_fpen = ARM_TBFLAG_AA64_FPEN(tb->flags);
     dc->vec_len = 0;
     dc->vec_stride = 0;
     dc->cp_regs = cpu->cp_regs;

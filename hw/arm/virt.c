@@ -123,6 +123,14 @@ static VirtBoardInfo machines[] = {
         .irqmap = a15irqmap,
     },
     {
+        .cpu_model = "cortex-a57",
+        /* Use the A15 private peripheral model for now: probably wrong! */
+        .qdevname = "a15mpcore_priv",
+        .gic_compatible = "arm,cortex-a15-gic",
+        .memmap = a15memmap,
+        .irqmap = a15irqmap,
+    },
+    {
         .cpu_model = "host",
         /* We use the A15 private peripheral model to get a V2 GIC */
         .qdevname = "a15mpcore_priv",

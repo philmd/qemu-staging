@@ -162,3 +162,39 @@
 #define stw(p, v) stw_data(p, v)
 #define stl(p, v) stl_data(p, v)
 #define stq(p, v) stq_data(p, v)
+
+/**
+ * tlb_vaddr_to_host:
+ * @env: CPUArchState
+ * @addr: guest virtual address to look up
+ * @mmu_idx: MMU index to use for lookup
+ *
+ * Look up the specified guest virtual index in the TCG softmmu TLB.
+ * If the TLB contains a host virtual address suitable for direct RAM
+ * access, then return it. Otherwise (TLB miss, TLB entry is for an
+ * I/O access, etc) return NULL.
+ *
+ * This is the equivalent of the initial fast-path code used by
+ * TCG backends for guest load and store accesses.
+ */
+static inline void *tlb_vaddr_to_host(CPUArchState *env, target_ulong addr,
+                                      int mmu_idx)
+{
+    int index = (addr >> TARGET_PAGE_BITS) & (CPU_TLB_SIZE - 1);
+    target_ulong tlb_addr = env->tlb_table[mmu_idx][index].addr_write;
+    uintptr_t haddr;
+
+    if ((addr & TARGET_PAGE_MASK)
+        != (tlb_addr & (TARGET_PAGE_MASK | TLB_INVALID_MASK))) {
+        /* TLB entry is for a different page */
+        return NULL;
+    }
+
+    if (tlb_addr & ~TARGET_PAGE_MASK) {
+        /* IO access */
+        return NULL;
+    }
+
+    haddr = addr + env->tlb_table[mmu_idx][index].addend;
+    return (void *)haddr;
+}

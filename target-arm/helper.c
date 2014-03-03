@@ -3586,6 +3586,7 @@ int cpu_arm_handle_mmu_fault (CPUARMState *env, target_ulong address,
     target_ulong page_size;
     int prot;
     int ret, is_user;
+    uint32_t syn;
 
     is_user = mmu_idx == MMU_USER_IDX;
     ret = get_phys_addr(env, address, access_type, is_user, &phys_addr, &prot,
@@ -3598,14 +3599,29 @@ int cpu_arm_handle_mmu_fault (CPUARMState *env, target_ulong address,
         return 0;
     }
 
+    /* AArch64 syndrome does not have an LPAE bit */
+    syn = ret & ~(1 << 9);
+
+    /* For insn and data aborts we assume there is no instruction syndrome
+     * information; this is always true for exceptions reported to EL1.
+     */
     if (access_type == 2) {
+        syn = syn_insn_abort(0, 0, syn);
         env->exception_index = EXCP_PREFETCH_ABORT;
     } else {
+        syn = syn_data_abort(0, 0, 0, access_type == 1, syn);
         if (access_type == 1 && arm_feature(env, ARM_FEATURE_V6)) {
             ret |= (1 << 11);
         }
         env->exception_index = EXCP_DATA_ABORT;
     }
+
+    /* Set bit 26 for exceptions with no change in EL */
+    if (arm_current_pl(env)) {
+        syn |= 1 << ARM_EL_EC_SHIFT;
+    }
+
+    env->exception.syndrome = syn;
     env->exception.vaddress = address;
     env->exception.fsr = ret;
     return 1;

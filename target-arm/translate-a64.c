@@ -9007,12 +9007,20 @@ static void disas_simd_two_reg_misc(DisasContext *s, uint32_t insn)
         case 0x19: /* FRINTM */
         case 0x38: /* FRINTP */
         case 0x39: /* FRINTZ */
-        case 0x58: /* FRINTA */
             need_rmode = true;
-            rmode = extract32(opcode, 5, 2) | (extract32(opcode, 0, 1) << 1);
+            rmode = extract32(opcode, 5, 1) | (extract32(opcode, 0, 1) << 1);
             /* fall through */
         case 0x59: /* FRINTX */
         case 0x79: /* FRINTI */
+            need_fpstatus = true;
+            if (size == 3 && !is_q) {
+                unallocated_encoding(s);
+                return;
+            }
+            break;
+        case 0x58: /* FRINTA */
+            need_rmode = true;
+            rmode = FPROUNDING_TIEAWAY;
             need_fpstatus = true;
             if (size == 3 && !is_q) {
                 unallocated_encoding(s);

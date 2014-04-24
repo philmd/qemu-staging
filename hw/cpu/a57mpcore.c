@@ -1,0 +1,137 @@
+/*
+ * Cortex-A57MPCore internal peripheral emulation.
+ *
+ * Copyright (c) 2014 Linaro Limited.
+ * Written by Peter Maydell.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, see <http://www.gnu.org/licenses/>.
+ */
+
+#include "hw/cpu/a57mpcore.h"
+#include "sysemu/kvm.h"
+
+static void a57mp_priv_set_irq(void *opaque, int irq, int level)
+{
+    A57MPPrivState *s = (A57MPPrivState *)opaque;
+
+    qemu_set_irq(qdev_get_gpio_in(DEVICE(&s->gic), irq), level);
+}
+
+static void a57mp_priv_initfn(Object *obj)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
+    A57MPPrivState *s = A57MPCORE_PRIV(obj);
+    DeviceState *gicdev;
+    const char *gictype = "arm_gic";
+
+    if (kvm_irqchip_in_kernel()) {
+        gictype = "kvm-arm-gic";
+    }
+
+    memory_region_init(&s->container, obj, "a57mp-priv-container", 0x8000);
+    sysbus_init_mmio(sbd, &s->container);
+
+    object_initialize(&s->gic, sizeof(s->gic), gictype);
+    gicdev = DEVICE(&s->gic);
+    qdev_set_parent_bus(gicdev, sysbus_get_default());
+    qdev_prop_set_uint32(gicdev, "revision", 2);
+}
+
+static void a57mp_priv_realize(DeviceState *dev, Error **errp)
+{
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
+    A57MPPrivState *s = A57MPCORE_PRIV(dev);
+    DeviceState *gicdev;
+    SysBusDevice *busdev;
+    int i;
+    Error *err = NULL;
+
+    gicdev = DEVICE(&s->gic);
+    qdev_prop_set_uint32(gicdev, "num-cpu", s->num_cpu);
+    qdev_prop_set_uint32(gicdev, "num-irq", s->num_irq);
+    object_property_set_bool(OBJECT(&s->gic), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    busdev = SYS_BUS_DEVICE(&s->gic);
+
+    /* Pass through outbound IRQ lines from the GIC */
+    sysbus_pass_irq(sbd, busdev);
+
+    /* Pass through inbound GPIO lines to the GIC */
+    qdev_init_gpio_in(dev, a57mp_priv_set_irq, s->num_irq - 32);
+
+    /* Wire the outputs from each CPU's generic timer to the
+     * appropriate GIC PPI inputs
+     */
+    for (i = 0; i < s->num_cpu; i++) {
+        DeviceState *cpudev = DEVICE(qemu_get_cpu(i));
+        int ppibase = s->num_irq - 32 + i * 32;
+        /* physical timer; we wire it up to the non-secure timer's ID,
+         * since a real A57 always has TrustZone but QEMU doesn't.
+         */
+        qdev_connect_gpio_out(cpudev, 0,
+                              qdev_get_gpio_in(gicdev, ppibase + 30));
+        /* virtual timer */
+        qdev_connect_gpio_out(cpudev, 1,
+                              qdev_get_gpio_in(gicdev, ppibase + 27));
+    }
+
+    /* Memory map (addresses are offsets from PERIPHBASE):
+     *  0x00000-0x01fff -- GIC CPU interface
+     *  0x10000-0x11fff -- GIC Distributor
+     * We don't model the virtual interfaces.
+     */
+    memory_region_add_subregion(&s->container, 0x00000,
+                                sysbus_mmio_get_region(busdev, 0));
+    memory_region_add_subregion(&s->container, 0x10000,
+                                sysbus_mmio_get_region(busdev, 1));
+}
+
+static Property a57mp_priv_properties[] = {
+    DEFINE_PROP_UINT32("num-cpu", A57MPPrivState, num_cpu, 1),
+    /* The Cortex-A57MP may have anything from 0 to 224 external interrupt
+     * IRQ lines (with another 32 internal). We default to 128+32, which
+     * is the number provided by the Cortex-A57MP test chip in the
+     * Versatile Express A57 development board.
+     * Other boards may differ and should set this property appropriately.
+     */
+    DEFINE_PROP_UINT32("num-irq", A57MPPrivState, num_irq, 160),
+    DEFINE_PROP_END_OF_LIST(),
+};
+
+static void a57mp_priv_class_init(ObjectClass *klass, void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+
+    dc->realize = a57mp_priv_realize;
+    dc->props = a57mp_priv_properties;
+    /* We currently have no savable state */
+}
+
+static const TypeInfo a57mp_priv_info = {
+    .name  = TYPE_A57MPCORE_PRIV,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size  = sizeof(A57MPPrivState),
+    .instance_init = a57mp_priv_initfn,
+    .class_init = a57mp_priv_class_init,
+};
+
+static void a57mp_register_types(void)
+{
+    type_register_static(&a57mp_priv_info);
+}
+
+type_init(a57mp_register_types)

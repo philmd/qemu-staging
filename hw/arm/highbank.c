@@ -241,6 +241,15 @@ static void calxeda_init(QEMUMachineInitArgs *args, enum cxmachines machine)
         cpuobj = object_new(object_class_get_name(oc));
         cpu = ARM_CPU(cpuobj);
 
+        object_property_set_int(cpuobj, QEMU_PSCI_METHOD_SMC, "psci-method",
+                                &error_abort);
+
+        /* Secondary CPUs start in PSCI powered-down state */
+        if (n > 0) {
+            object_property_set_bool(cpuobj, true, "start-powered-off",
+                                     &error_abort);
+        }
+
         if (object_property_find(cpuobj, "reset-cbar", NULL)) {
             object_property_set_int(cpuobj, MPCORE_PERIPHBASE,
                                     "reset-cbar", &error_abort);

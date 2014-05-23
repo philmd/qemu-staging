@@ -187,23 +187,19 @@ static void fdt_add_psci_node(const VirtBoardInfo *vbi)
     void *fdt = vbi->fdt;
     ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(0));
 
-    /* No PSCI for TCG yet */
-    if (kvm_enabled()) {
-        qemu_fdt_add_subnode(fdt, "/psci");
-        if (armcpu->psci_version == 2) {
-            const char comp[] = "arm,psci-0.2\0arm,psci";
-            qemu_fdt_setprop(fdt, "/psci", "compatible", comp, sizeof(comp));
-        } else {
-            qemu_fdt_setprop_string(fdt, "/psci", "compatible", "arm,psci");
-        }
-
-        qemu_fdt_setprop_string(fdt, "/psci", "method", "hvc");
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_suspend",
-                                  PSCI_FN_CPU_SUSPEND);
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_off", PSCI_FN_CPU_OFF);
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_on", PSCI_FN_CPU_ON);
-        qemu_fdt_setprop_cell(fdt, "/psci", "migrate", PSCI_FN_MIGRATE);
+    qemu_fdt_add_subnode(fdt, "/psci");
+    if (armcpu->psci_version == 2) {
+        const char comp[] = "arm,psci-0.2\0arm,psci";
+        qemu_fdt_setprop(fdt, "/psci", "compatible", comp, sizeof(comp));
+    } else {
+        qemu_fdt_setprop_string(fdt, "/psci", "compatible", "arm,psci");
     }
+
+    qemu_fdt_setprop_string(fdt, "/psci", "method", "hvc");
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_suspend", PSCI_FN_CPU_SUSPEND);
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_off", PSCI_FN_CPU_OFF);
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_on", PSCI_FN_CPU_ON);
+    qemu_fdt_setprop_cell(fdt, "/psci", "migrate", PSCI_FN_MIGRATE);
 }
 
 static void fdt_add_timer_nodes(const VirtBoardInfo *vbi)
@@ -418,16 +414,6 @@ static void machvirt_init(QEMUMachineInitArgs *args)
 
     vbi->smp_cpus = smp_cpus;
 
-    /*
-     * Only supported method of starting secondary CPUs is PSCI and
-     * PSCI is not yet supported with TCG, so limit smp_cpus to 1
-     * if we're not using KVM.
-     */
-    if (!kvm_enabled() && smp_cpus > 1) {
-        error_report("mach-virt: must enable KVM to use multiple CPUs");
-        exit(1);
-    }
-
     if (args->ram_size > vbi->memmap[VIRT_MEM].size) {
         error_report("mach-virt: cannot model more than 30GB RAM");
         exit(1);
@@ -445,6 +431,9 @@ static void machvirt_init(QEMUMachineInitArgs *args)
             exit(1);
         }
         cpuobj = object_new(object_class_get_name(oc));
+
+        object_property_set_int(cpuobj, QEMU_PSCI_METHOD_HVC, "psci-method",
+                                NULL);
 
         /* Secondary CPUs start in PSCI powered-down state */
         if (n > 0) {

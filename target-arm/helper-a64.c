@@ -438,6 +438,8 @@ float32 HELPER(fcvtx_f64_to_f32)(float64 a, CPUARMState *env)
     return r;
 }
 
+#if !defined(CONFIG_USER_ONLY)
+
 /* Handle a CPU exception.  */
 void aarch64_cpu_do_interrupt(CPUState *cs)
 {
@@ -512,3 +514,4 @@ void aarch64_cpu_do_interrupt(CPUState *cs)
     env->pc = addr;
     cs->interrupt_request |= CPU_INTERRUPT_EXITTB;
 }
+#endif

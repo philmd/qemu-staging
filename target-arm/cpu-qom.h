@@ -105,6 +105,11 @@ typedef struct ARMCPU {
     /* CPU currently in PSCI powered-off state */
     bool powered_off;
 
+    /* PSCI emulation state
+     * 0 - disabled, 1 - smc, 2 - hvc
+     */
+    uint32_t psci_method;
+
     /* [QEMU_]KVM_ARM_TARGET_* constant for this CPU, or
      * QEMU_KVM_ARM_TARGET_NONE if the kernel doesn't support this CPU type.
      */
@@ -195,6 +200,7 @@ extern const struct VMStateDescription vmstate_arm_cpu;
 void register_cp_regs_for_features(ARMCPU *cpu);
 void init_cpreg_list(ARMCPU *cpu);
 
+bool arm_handle_psci(CPUState *cs);
 bool arm_cpu_do_hvc(CPUState *cs);
 bool arm_cpu_do_smc(CPUState *cs);
 

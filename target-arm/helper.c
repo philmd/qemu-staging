@@ -3257,11 +3257,23 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
 
 bool arm_cpu_do_hvc(CPUState *cs)
 {
+    ARMCPU *cpu = ARM_CPU(cs);
+
+    if (cpu->psci_method == QEMU_PSCI_METHOD_HVC) {
+        return arm_handle_psci(cs);
+    }
+
     return false;
 }
 
 bool arm_cpu_do_smc(CPUState *cs)
 {
+    ARMCPU *cpu = ARM_CPU(cs);
+
+    if (cpu->psci_method == QEMU_PSCI_METHOD_SMC) {
+        return arm_handle_psci(cs);
+    }
+
     return false;
 }
 

@@ -3255,6 +3255,16 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     env->thumb = addr & 1;
 }
 
+bool arm_cpu_do_hvc(CPUState *cs)
+{
+    return false;
+}
+
+bool arm_cpu_do_smc(CPUState *cs)
+{
+    return false;
+}
+
 /* Handle a CPU exception.  */
 void arm_cpu_do_interrupt(CPUState *cs)
 {
@@ -3355,6 +3365,26 @@ void arm_cpu_do_interrupt(CPUState *cs)
         addr = 0x1c;
         /* Disable FIQ, IRQ and imprecise data aborts.  */
         mask = CPSR_A | CPSR_I | CPSR_F;
+        offset = 4;
+        break;
+    case EXCP_HVC:
+        if (arm_cpu_do_hvc(cs)) {
+            return;
+        }
+        qemu_log_mask(LOG_GUEST_ERROR, "Unhandled HVC exception\n");
+        new_mode = ARM_CPU_MODE_UND;
+        addr = 0x04;
+        mask = CPSR_A | CPSR_I;
+        offset = 4;
+       break;
+    case EXCP_SMC:
+        if (arm_cpu_do_smc(cs)) {
+            return;
+        }
+        qemu_log_mask(LOG_GUEST_ERROR, "Unhandled SMC exception\n");
+        new_mode = ARM_CPU_MODE_UND;
+        addr = 0x04;
+        mask = CPSR_A | CPSR_I;
         offset = 4;
         break;
     default:

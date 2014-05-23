@@ -466,14 +466,11 @@ void aarch64_cpu_do_interrupt(CPUState *cs)
                       env->exception.syndrome);
     }
 
-    env->cp15.esr_el1 = env->exception.syndrome;
-    env->cp15.far_el1 = env->exception.vaddress;
-
     switch (cs->exception_index) {
     case EXCP_PREFETCH_ABORT:
     case EXCP_DATA_ABORT:
         qemu_log_mask(CPU_LOG_INT, "...with FAR 0x%" PRIx64 "\n",
-                      env->cp15.far_el1);
+                      env->exception.vaddress);
         break;
     case EXCP_BKPT:
     case EXCP_UDEF:
@@ -485,9 +482,36 @@ void aarch64_cpu_do_interrupt(CPUState *cs)
     case EXCP_FIQ:
         addr += 0x100;
         break;
+    case EXCP_HVC:
+        if (arm_cpu_do_hvc(cs)) {
+            return;
+        }
+        qemu_log_mask(LOG_GUEST_ERROR, "Unhandled HVC exception\n");
+        env->exception.syndrome = syn_uncategorized();
+        if (is_a64(env)) {
+            env->pc -= 4;
+        } else {
+            env->regs[15] -= 4;
+        }
+        break;
+    case EXCP_SMC:
+        if (arm_cpu_do_smc(cs)) {
+            return;
+        }
+        qemu_log_mask(LOG_GUEST_ERROR, "Unhandled SMC exception\n");
+        env->exception.syndrome = syn_uncategorized();
+        if (is_a64(env)) {
+            env->pc -= 4;
+        } else {
+            env->regs[15] -= 4;
+        }
+        break;
     default:
         cpu_abort(cs, "Unhandled exception 0x%x\n", cs->exception_index);
     }
+
+    env->cp15.esr_el1 = env->exception.syndrome;
+    env->cp15.far_el1 = env->exception.vaddress;
 
     if (is_a64(env)) {
         env->banked_spsr[0] = pstate_read(env);

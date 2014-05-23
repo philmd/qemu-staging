@@ -7727,9 +7727,14 @@ static void disas_arm_insn(CPUARMState * env, DisasContext *s)
         case 7:
         {
             int imm16 = extract32(insn, 0, 4) | (extract32(insn, 8, 12) << 4);
-            /* SMC instruction (op1 == 3)
-               and undefined instructions (op1 == 0 || op1 == 2)
-               will trap */
+            /* HVC and SMC instructions */
+            if (op1 == 2) {
+                gen_exception_insn(s, 0, EXCP_HVC, syn_aa32_hvc(imm16));
+                break;
+            } else if (op1 == 3) {
+                gen_exception_insn(s, 0, EXCP_SMC, syn_aa32_smc());
+                break;
+            }
             if (op1 != 1) {
                 goto illegal_op;
             }
@@ -9555,10 +9560,15 @@ static int disas_thumb2_insn(CPUARMState *env, DisasContext *s, uint16_t insn_hw
                     goto illegal_op;
 
                 if (insn & (1 << 26)) {
-                    /* Secure monitor call (v6Z) */
-                    qemu_log_mask(LOG_UNIMP,
-                                  "arm: unimplemented secure monitor call\n");
-                    goto illegal_op; /* not implemented.  */
+                    if (!(insn & (1 << 20))) {
+                        /* Hypervisor call (v7) */
+                        uint32_t imm16 = extract32(insn, 0, 12);
+                        imm16 |= extract32(insn, 16, 4) << 12;
+                        gen_exception_insn(s, 0, EXCP_HVC, syn_aa32_hvc(imm16));
+                    } else {
+                        /* Secure monitor call (v6+) */
+                        gen_exception_insn(s, 0, EXCP_SMC, syn_aa32_smc());
+                    }
                 } else {
                     op = (insn >> 20) & 7;
                     switch (op) {

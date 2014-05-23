@@ -195,6 +195,9 @@ extern const struct VMStateDescription vmstate_arm_cpu;
 void register_cp_regs_for_features(ARMCPU *cpu);
 void init_cpreg_list(ARMCPU *cpu);
 
+bool arm_cpu_do_hvc(CPUState *cs);
+bool arm_cpu_do_smc(CPUState *cs);
+
 void arm_cpu_do_interrupt(CPUState *cpu);
 void arm_v7m_cpu_do_interrupt(CPUState *cpu);
 

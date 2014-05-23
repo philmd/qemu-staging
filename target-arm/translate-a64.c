@@ -1449,11 +1449,18 @@ static void disas_exc(DisasContext *s, uint32_t insn)
         /* SVC, HVC, SMC; since we don't support the Virtualization
          * or TrustZone extensions these all UNDEF except SVC.
          */
-        if (op2_ll != 1) {
-            unallocated_encoding(s);
+        switch (op2_ll) {
+        case 1:
+            gen_exception_insn(s, 0, EXCP_SWI, syn_aa64_svc(imm16));
+            break;
+        case 2:
+            gen_exception_insn(s, 0, EXCP_HVC, syn_aa64_hvc(imm16));
+            break;
+        case 3:
+            gen_exception_insn(s, 0, EXCP_SMC, syn_aa64_smc(imm16));
             break;
         }
-        gen_exception_insn(s, 0, EXCP_SWI, syn_aa64_svc(imm16));
+        unallocated_encoding(s);
         break;
     case 1:
         if (op2_ll != 0) {

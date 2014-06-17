@@ -1017,32 +1017,39 @@ struct PipeDevice {
     uint64_t  params_addr;
 };
 
-/* Return the QEMU accessible pointer of the drivers virtual address.
+/* Map the guest buffer specified by the guest vaddr 'address'.
+ * Returns a host pointer which should be unmapped later via
+ * cpu_physical_memory_unmap(), or NULL if mapping failed (likely
+ * because the vaddr doesn't actually point at RAM).
+ * Note that for RAM the "mapping" process doesn't actually involve a
+ * data copy.
  *
- * TODO: fix the driver to pass physical addresses (a la virt-io)
+ * TODO: using cpu_get_phys_page_debug() is a bit bogus, and we could
+ * avoid it if we fixed the driver to do the sane thing and pass us
+ * physical addresses rather than virtual ones.
  */
-static void * get_qemu_addr_of_guest_buffer(target_ulong address, size_t size)
+static void *map_guest_buffer(target_ulong address, size_t size, int is_write)
 {
     hwaddr l = size;
-    uint8_t *ptr;
-    hwaddr addr1;
-/*     MemoryRegion *mr; */
+    void *ptr;
 
-    target_ulong page = address & TARGET_PAGE_MASK;
-    size_t page_off = (address - page);
+    /* Convert virtual address to physical address */
+    hwaddr phys = cpu_get_phys_page_debug(current_cpu, address);
 
-    hwaddr  phys = cpu_get_phys_page_debug(current_cpu, page);
+    ptr = cpu_physical_memory_map(phys, &l, is_write);
+    if (!ptr) {
+        /* Can't happen for RAM */
+        return NULL;
+    }
+    if (l != size) {
+        /* This will only happen if the address pointed at non-RAM,
+         * or if the size means the buffer end is beyond the end of
+         * the RAM block.
+         */
+        cpu_physical_memory_unmap(ptr, l, 0, 0);
+        return NULL;
+    }
 
-/*     fprintf(stderr,"%s: translating %"HWADDR_PRIx" of size %zd\n", */
-/*             __func__, phys, size); */
-
-    //mr =
-    address_space_translate(&address_space_memory, phys + page_off, &addr1, &l, true);
-
-//    addr1 += memory_region_get_ram_addr(mr);
-    ptr = qemu_get_ram_ptr(addr1);
-
-/*     fprintf(stderr,"%s: left = %zd, ptr = %p\n", __func__, l, ptr); */
     return ptr;
 }
 
@@ -1095,24 +1102,34 @@ pipeDevice_doCommand( PipeDevice* dev, uint32_t command )
     case PIPE_CMD_READ_BUFFER: {
         /* Translate virtual address into physical one, into emulator memory. */
         GoldfishPipeBuffer  buffer;
-        buffer.data = get_qemu_addr_of_guest_buffer(dev->address, dev->size);
+        buffer.data = map_guest_buffer(dev->address, dev->size, 1);
+        if (!buffer.data) {
+            dev->status = PIPE_ERROR_INVAL;
+            break;
+        }
         buffer.size = dev->size;
         dev->status = pipe->funcs->recvBuffers(pipe->opaque, &buffer, 1);
         DD("%s: CMD_READ_BUFFER channel=0x%llx address=0x%16llx size=%d > status=%d",
            __FUNCTION__, (unsigned long long)dev->channel, (unsigned long long)dev->address,
            dev->size, dev->status);
+        cpu_physical_memory_unmap(buffer.data, dev->size, 1, dev->size);
         break;
     }
 
     case PIPE_CMD_WRITE_BUFFER: {
         /* Translate virtual address into physical one, into emulator memory. */
         GoldfishPipeBuffer  buffer;
-        buffer.data = get_qemu_addr_of_guest_buffer(dev->address, dev->size);
+        buffer.data = map_guest_buffer(dev->address, dev->size, 0);
+        if (!buffer.data) {
+            dev->status = PIPE_ERROR_INVAL;
+            break;
+        }
         buffer.size = dev->size;
         dev->status = pipe->funcs->sendBuffers(pipe->opaque, &buffer, 1);
         DD("%s: CMD_WRITE_BUFFER channel=0x%llx address=0x%16llx size=%d > status=%d",
            __FUNCTION__, (unsigned long long)dev->channel, (unsigned long long)dev->address,
            dev->size, dev->status);
+        cpu_physical_memory_unmap(buffer.data, dev->size, 0, dev->size);
         break;
     }
 

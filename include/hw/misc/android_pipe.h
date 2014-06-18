@@ -217,4 +217,7 @@ struct access_params_64 {
     uint32_t flags;
 };
 
+
+extern void android_adb_dbg_backend_init(void);
+
 #endif /* _HW_ANDROID_PIPE_H */

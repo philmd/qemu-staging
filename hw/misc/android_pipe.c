@@ -1254,6 +1254,13 @@ static void android_pipe_realize(DeviceState *dev, Error **errp)
 #if DEBUG_THROTTLE_PIPE
     android_pipe_add_type("throttle", NULL, &throttlePipe_funcs);
 #endif
+
+    /* TODO: This may be a complete hack and there may be beautiful QOM ways
+     * to accomplish this.
+     *
+     * Initialize android pipe backends
+     */
+    android_adb_dbg_backend_init();
 }
 
 void

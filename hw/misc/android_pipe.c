@@ -1261,6 +1261,7 @@ static void android_pipe_realize(DeviceState *dev, Error **errp)
      * Initialize android pipe backends
      */
     android_adb_dbg_backend_init();
+    android_adb_backend_init();
 }
 
 void

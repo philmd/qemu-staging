@@ -33,7 +33,6 @@
 
 #include "hw/misc/android_pipe.h"
 
-
 //#define DEBUG_ADB
 
 #ifdef DEBUG_ADB
@@ -48,8 +47,6 @@ do { fprintf(stderr, "adb: " fmt , ## __VA_ARGS__); } while (0)
 #define ADB_BUFFER_LEN     4096
 
 #define ADB_SERVER_PORT         5037
-#define ADB_EMULATOR_PORT       5555
-
 
 /* 'accept' request from adbd */
 static const char _accept_req[] = "accept";
@@ -60,7 +57,7 @@ static const char _ok_resp[]    = "ok";
 static const char _ko_resp[]    = "ko";
 
 
-static bool _pipe_backend_initialized = false;
+static bool pipe_backend_initialized = false;
 
 enum adb_connect_state {
     ADB_CONNECTION_STATE_UNCONNECTED = 0,
@@ -317,22 +314,22 @@ static gboolean tcp_adb_accept(GIOChannel *channel, GIOCondition cond,
     }
 }
 
-static void adb_server_listen_incoming(void)
+static bool adb_server_listen_incoming(int port)
 {
     adb_backend_state *bs = &adb_state;
     char *host_port;
+    Error *err = NULL;
     int fd;
 
-    host_port = g_strdup_printf("localhost:%d", ADB_EMULATOR_PORT);
-    fd = inet_listen(host_port, NULL, 0, SOCK_STREAM, 0, &error_abort);
+    host_port = g_strdup_printf("localhost:%d", port);
+    fd = inet_listen(host_port, NULL, 0, SOCK_STREAM, 0, &err);
     if (fd < 0) {
-        DPRINTF("Could not create listening socket\n");
-        return;
+        return false;
     }
-
 
     bs->listen_chan = io_channel_from_socket(fd);
     g_io_add_watch(bs->listen_chan, G_IO_IN, tcp_adb_accept, bs);
+    return true;
 }
 
 
@@ -682,20 +679,26 @@ static const AndroidPipeFuncs adb_pipe_funcs = {
     adb_pipe_wake_on,
 };
 
-void android_adb_backend_init(void)
+/* Initialize and try to listen on the specified port;
+ * return true on success or false if the port was in use.
+ * Note that there's no way to undo this, so the board must
+ * set up the console port first and the adb port second.
+ */
+bool adb_server_init(int port)
 {
-    if (_pipe_backend_initialized) {
-        return;
+    if (!pipe_backend_initialized) {
+        adb_state.chan = NULL;
+        adb_state.listen_chan = NULL;
+        adb_state.data_in = FALSE;
+        adb_state.connected_pipe = NULL;
+
+        android_pipe_add_type("qemud:adb", NULL, &adb_pipe_funcs);
+        pipe_backend_initialized = true;
     }
 
-    adb_state.chan = NULL;
-    adb_state.listen_chan = NULL;
-    adb_state.data_in = FALSE;
-    adb_state.connected_pipe = NULL;
-
-    android_pipe_add_type("qemud:adb", NULL, &adb_pipe_funcs);
-    _pipe_backend_initialized = true;
-
-    adb_server_listen_incoming();
-    adb_server_notify(ADB_EMULATOR_PORT);
+    if (!adb_server_listen_incoming(port)) {
+        return false;
+    }
+    adb_server_notify(port);
+    return true;
 }

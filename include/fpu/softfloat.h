@@ -274,6 +274,8 @@ floatx80 int32_to_floatx80(int32_t STATUS_PARAM);
 float128 int32_to_float128(int32_t STATUS_PARAM);
 float32 int64_to_float32(int64_t STATUS_PARAM);
 float64 int64_to_float64(int64_t STATUS_PARAM);
+float32 uint64_to_float32(uint64_t STATUS_PARAM);
+float64 uint64_to_float64(uint64_t STATUS_PARAM);
 floatx80 int64_to_floatx80(int64_t STATUS_PARAM);
 float128 int64_to_float128(int64_t STATUS_PARAM);
 float128 uint64_to_float128(uint64_t STATUS_PARAM);

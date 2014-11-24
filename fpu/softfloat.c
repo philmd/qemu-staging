@@ -1302,27 +1302,6 @@ float32 int64_to_float32(int64_t a STATUS_PARAM)
 
 }
 
-float32 uint64_to_float32(uint64_t a STATUS_PARAM)
-{
-    int8 shiftCount;
-
-    if ( a == 0 ) return float32_zero;
-    shiftCount = countLeadingZeros64( a ) - 40;
-    if ( 0 <= shiftCount ) {
-        return packFloat32(0, 0x95 - shiftCount, a<<shiftCount);
-    }
-    else {
-        shiftCount += 7;
-        if ( shiftCount < 0 ) {
-            shift64RightJamming( a, - shiftCount, &a );
-        }
-        else {
-            a <<= shiftCount;
-        }
-        return roundAndPackFloat32(0, 0x9C - shiftCount, a STATUS_VAR);
-    }
-}
-
 /*----------------------------------------------------------------------------
 | Returns the result of converting the 64-bit two's complement integer `a'
 | to the double-precision floating-point format.  The conversion is performed
@@ -1340,20 +1319,6 @@ float64 int64_to_float64(int64_t a STATUS_PARAM)
     zSign = ( a < 0 );
     return normalizeRoundAndPackFloat64( zSign, 0x43C, zSign ? - a : a STATUS_VAR );
 
-}
-
-float64 uint64_to_float64(uint64_t a STATUS_PARAM)
-{
-    int exp =  0x43C;
-
-    if (a == 0) {
-        return float64_zero;
-    }
-    if ((int64_t)a < 0) {
-        shift64RightJamming(a, 1, &a);
-        exp += 1;
-    }
-    return normalizeRoundAndPackFloat64(0, exp, a STATUS_VAR);
 }
 
 /*----------------------------------------------------------------------------

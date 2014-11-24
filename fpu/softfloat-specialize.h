@@ -33,12 +33,6 @@ this code that are retained.
 ===============================================================================
 */
 
-#if defined(TARGET_MIPS) || defined(TARGET_SH4) || defined(TARGET_UNICORE32)
-#define SNAN_BIT_IS_ONE		1
-#else
-#define SNAN_BIT_IS_ONE		0
-#endif
-
 #if defined(TARGET_XTENSA)
 /* Define for architectures which deviate from IEEE in not supporting
  * signaling NaNs (so all NaNs are treated as quiet).
@@ -65,8 +59,6 @@ const float32 float32_default_nan = const_float32(0x7FFFFFFF);
 #elif defined(TARGET_PPC) || defined(TARGET_ARM) || defined(TARGET_ALPHA) || \
       defined(TARGET_XTENSA)
 const float32 float32_default_nan = const_float32(0x7FC00000);
-#elif SNAN_BIT_IS_ONE
-const float32 float32_default_nan = const_float32(0x7FBFFFFF);
 #else
 const float32 float32_default_nan = const_float32(0xFFC00000);
 #endif
@@ -78,8 +70,6 @@ const float32 float32_default_nan = const_float32(0xFFC00000);
 const float64 float64_default_nan = const_float64(LIT64( 0x7FFFFFFFFFFFFFFF ));
 #elif defined(TARGET_PPC) || defined(TARGET_ARM) || defined(TARGET_ALPHA)
 const float64 float64_default_nan = const_float64(LIT64( 0x7FF8000000000000 ));
-#elif SNAN_BIT_IS_ONE
-const float64 float64_default_nan = const_float64(LIT64( 0x7FF7FFFFFFFFFFFF ));
 #else
 const float64 float64_default_nan = const_float64(LIT64( 0xFFF8000000000000 ));
 #endif
@@ -87,13 +77,8 @@ const float64 float64_default_nan = const_float64(LIT64( 0xFFF8000000000000 ));
 /*----------------------------------------------------------------------------
 | The pattern for a default generated extended double-precision NaN.
 *----------------------------------------------------------------------------*/
-#if SNAN_BIT_IS_ONE
-#define floatx80_default_nan_high 0x7FFF
-#define floatx80_default_nan_low  LIT64( 0xBFFFFFFFFFFFFFFF )
-#else
 #define floatx80_default_nan_high 0xFFFF
 #define floatx80_default_nan_low  LIT64( 0xC000000000000000 )
-#endif
 
 const floatx80 floatx80_default_nan
     = make_floatx80_init(floatx80_default_nan_high, floatx80_default_nan_low);
@@ -102,13 +87,8 @@ const floatx80 floatx80_default_nan
 | The pattern for a default generated quadruple-precision NaN.  The `high' and
 | `low' values hold the most- and least-significant bits, respectively.
 *----------------------------------------------------------------------------*/
-#if SNAN_BIT_IS_ONE
-#define float128_default_nan_high LIT64( 0x7FFF7FFFFFFFFFFF )
-#define float128_default_nan_low  LIT64( 0xFFFFFFFFFFFFFFFF )
-#else
 #define float128_default_nan_high LIT64( 0xFFFF800000000000 )
 #define float128_default_nan_low  LIT64( 0x0000000000000000 )
-#endif
 
 const float128 float128_default_nan
     = make_float128_init(float128_default_nan_high, float128_default_nan_low);
@@ -254,11 +234,7 @@ int float32_is_signaling_nan(float32 a_)
 int float32_is_quiet_nan( float32 a_ )
 {
     uint32_t a = float32_val(a_);
-#if SNAN_BIT_IS_ONE
-    return ( ( ( a>>22 ) & 0x1FF ) == 0x1FE ) && ( a & 0x003FFFFF );
-#else
-    return ( 0xFF800000 <= (uint32_t) ( a<<1 ) );
-#endif
+    return ( 0xFF000000 <= (uint32_t) ( a<<1 ) );
 }
 
 /*----------------------------------------------------------------------------
@@ -269,11 +245,7 @@ int float32_is_quiet_nan( float32 a_ )
 int float32_is_signaling_nan( float32 a_ )
 {
     uint32_t a = float32_val(a_);
-#if SNAN_BIT_IS_ONE
-    return ( 0xFF800000 <= (uint32_t) ( a<<1 ) );
-#else
     return ( ( ( a>>22 ) & 0x1FF ) == 0x1FE ) && ( a & 0x003FFFFF );
-#endif
 }
 #endif
 
@@ -662,13 +634,7 @@ int float64_is_signaling_nan(float64 a_)
 int float64_is_quiet_nan( float64 a_ )
 {
     uint64_t a = float64_val(a_);
-#if SNAN_BIT_IS_ONE
-    return
-           ( ( ( a>>51 ) & 0xFFF ) == 0xFFE )
-        && ( a & LIT64( 0x0007FFFFFFFFFFFF ) );
-#else
-    return ( LIT64( 0xFFF0000000000000 ) <= (uint64_t) ( a<<1 ) );
-#endif
+    return ( LIT64( 0xFFE0000000000000 ) <= (uint64_t) ( a<<1 ) );
 }
 
 /*----------------------------------------------------------------------------
@@ -679,13 +645,9 @@ int float64_is_quiet_nan( float64 a_ )
 int float64_is_signaling_nan( float64 a_ )
 {
     uint64_t a = float64_val(a_);
-#if SNAN_BIT_IS_ONE
-    return ( LIT64( 0xFFF0000000000000 ) <= (uint64_t) ( a<<1 ) );
-#else
     return
            ( ( ( a>>51 ) & 0xFFF ) == 0xFFE )
         && ( a & LIT64( 0x0007FFFFFFFFFFFF ) );
-#endif
 }
 #endif
 
@@ -861,18 +823,8 @@ int floatx80_is_signaling_nan(floatx80 a_)
 
 int floatx80_is_quiet_nan( floatx80 a )
 {
-#if SNAN_BIT_IS_ONE
-    uint64_t aLow;
-
-    aLow = a.low & ~ LIT64( 0x4000000000000000 );
-    return
-           ( ( a.high & 0x7FFF ) == 0x7FFF )
-        && (uint64_t) ( aLow<<1 )
-        && ( a.low == aLow );
-#else
     return ( ( a.high & 0x7FFF ) == 0x7FFF )
         && (LIT64( 0x8000000000000000 ) <= ((uint64_t) ( a.low<<1 )));
-#endif
 }
 
 /*----------------------------------------------------------------------------
@@ -883,10 +835,6 @@ int floatx80_is_quiet_nan( floatx80 a )
 
 int floatx80_is_signaling_nan( floatx80 a )
 {
-#if SNAN_BIT_IS_ONE
-    return ( ( a.high & 0x7FFF ) == 0x7FFF )
-        && (LIT64( 0x8000000000000000 ) <= ((uint64_t) ( a.low<<1 )));
-#else
     uint64_t aLow;
 
     aLow = a.low & ~ LIT64( 0x4000000000000000 );
@@ -894,7 +842,6 @@ int floatx80_is_signaling_nan( floatx80 a )
            ( ( a.high & 0x7FFF ) == 0x7FFF )
         && (uint64_t) ( aLow<<1 )
         && ( a.low == aLow );
-#endif
 }
 #endif
 
@@ -1028,15 +975,9 @@ int float128_is_signaling_nan(float128 a_)
 
 int float128_is_quiet_nan( float128 a )
 {
-#if SNAN_BIT_IS_ONE
-    return
-           ( ( ( a.high>>47 ) & 0xFFFF ) == 0xFFFE )
-        && ( a.low || ( a.high & LIT64( 0x00007FFFFFFFFFFF ) ) );
-#else
     return
            ( LIT64( 0xFFFE000000000000 ) <= (uint64_t) ( a.high<<1 ) )
         && ( a.low || ( a.high & LIT64( 0x0000FFFFFFFFFFFF ) ) );
-#endif
 }
 
 /*----------------------------------------------------------------------------
@@ -1046,15 +987,9 @@ int float128_is_quiet_nan( float128 a )
 
 int float128_is_signaling_nan( float128 a )
 {
-#if SNAN_BIT_IS_ONE
-    return
-           ( LIT64( 0xFFFE000000000000 ) <= (uint64_t) ( a.high<<1 ) )
-        && ( a.low || ( a.high & LIT64( 0x0000FFFFFFFFFFFF ) ) );
-#else
     return
            ( ( ( a.high>>47 ) & 0xFFFF ) == 0xFFFE )
         && ( a.low || ( a.high & LIT64( 0x00007FFFFFFFFFFF ) ) );
-#endif
 }
 #endif
 

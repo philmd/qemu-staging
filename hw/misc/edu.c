@@ -38,6 +38,8 @@
 typedef struct {
     PCIDevice pdev;
     MemoryRegion mmio;
+    MemoryRegion testendian;
+    AddressSpace spaceendian;
 
     QemuThread thread;
     QemuMutex thr_mutex;
@@ -278,6 +280,29 @@ static const MemoryRegionOps edu_mmio_ops = {
     .endianness = DEVICE_NATIVE_ENDIAN,
 };
 
+static uint64_t edu_test_read(void *opaque, hwaddr addr, unsigned size)
+{
+    fprintf(stderr, "edu_test_read: %llx\n", (unsigned long long)addr);
+    return 0xdead;
+}
+
+static void edu_test_write(void *opaque, hwaddr addr, uint64_t val,
+                unsigned size)
+{
+    fprintf(stderr, "edu_test_write: %llx <- %llx\n", (unsigned long long)addr,
+            (unsigned long long)val);
+}
+
+static const MemoryRegionOps edu_test_ops = {
+    .read = edu_test_read,
+    .write = edu_test_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 4,
+    },
+};
+
 /*
  * We purposely use a thread, so that users are forced to wait for the status
  * register.
@@ -331,6 +356,10 @@ static int pci_edu_init(PCIDevice *pdev)
 {
     EduState *edu = DO_UPCAST(EduState, pdev, pdev);
     uint8_t *pci_conf = pdev->config;
+    uint8_t buf[4];
+    void *p;
+    hwaddr addr;
+    hwaddr plen;
 
     timer_init_ms(&edu->dma_timer, QEMU_CLOCK_VIRTUAL, edu_dma_timer, edu);
 
@@ -344,6 +373,21 @@ static int pci_edu_init(PCIDevice *pdev)
     memory_region_init_io(&edu->mmio, OBJECT(edu), &edu_mmio_ops, edu,
                     "edu-mmio", 1 << 20);
     pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &edu->mmio);
+
+    addr = 0x40000000ULL;
+    plen = 4096;
+    /* Setup: write at PA 0x80000000 */
+    p = address_space_map(&address_space_memory, addr, &plen, 1);
+    memcpy(p, "ABCD", 4);
+    address_space_unmap(&address_space_memory, p, plen, 1, 4);
+    memory_region_init_io(&edu->testendian, OBJECT(edu), &edu_test_ops, edu,
+                          "edu-testendian", 4);
+    address_space_init(&edu->spaceendian, &edu->testendian, "edu-spaceendian");
+
+    /* Setup: read at PA 0x80000000, write into device. */
+    address_space_rw(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED, buf, sizeof buf, 0);
+    fprintf(stderr, "%x%x%x%x\n", buf[0], buf[1], buf[2], buf[3]);
+    address_space_rw(&edu->spaceendian, 0, MEMTXATTRS_UNSPECIFIED, buf, sizeof buf, 1);
 
     return 0;
 }

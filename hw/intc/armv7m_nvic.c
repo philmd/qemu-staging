@@ -23,6 +23,8 @@
 
 typedef struct {
     GICState gic;
+    uint8_t prigroup;
+
     struct {
         uint32_t control;
         uint32_t reload;
@@ -119,6 +121,29 @@ static void systick_reset(nvic_state *s)
     s->systick.reload = 0;
     s->systick.tick = 0;
     timer_del(s->systick.timer);
+}
+
+/* @returns the active (running) exception priority.
+ *    only a higher (numerically lower) priority can preempt.
+ */
+int armv7m_excp_running_prio(ARMCPU *cpu)
+{
+    CPUARMState *env = &cpu->env;
+    nvic_state *s = env->nvic;
+    int running;
+
+    if (env->daif & PSTATE_F) { /* FAULTMASK */
+        running = -1;
+    } else if (env->daif & PSTATE_I) { /* PRIMASK */
+        running = 0;
+    } else if (env->v7m.basepri > 0) {
+        /* BASEPRI==1 -> masks [1,255] (not same as PRIMASK==1) */
+        running = env->v7m.basepri >> (s->prigroup+1);
+    } else {
+        running = 0x100; /* lower than any possible priority */
+    }
+    /* consider priority of active handler */
+    return MIN(running, env->v7m.exception_prio);
 }
 
 /* The external routines use the hardware vector numbering, ie. the first

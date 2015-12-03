@@ -1283,6 +1283,14 @@ uint32_t arm_phys_excp_target_el(CPUState *cs, uint32_t excp_idx,
                                  uint32_t cur_el, bool secure);
 
 /* Interface between CPU and Interrupt controller.  */
+#ifndef CONFIG_USER_ONLY
+int armv7m_excp_running_prio(ARMCPU *cpu);
+#else
+static inline int armv7m_excp_running_prio(ARMCPU *cpu)
+{
+    return 0x100;
+}
+#endif
 void armv7m_nvic_set_pending(void *opaque, int irq);
 int armv7m_nvic_acknowledge_irq(void *opaque);
 void armv7m_nvic_complete_irq(void *opaque, int irq);

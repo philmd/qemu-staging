@@ -732,7 +732,9 @@ static void nvic_writel(NVICState *s, uint32_t offset, uint32_t value)
                       "NVIC: Aux fault status registers unimplemented\n");
         break;
     case 0xf00: /* Software Triggered Interrupt Register */
-        if ((value & 0x1ff) < NVIC_MAX_IRQ) {
+        /* STIR write allowed if privlaged or USERSETMPEND set */
+        if ((arm_current_el(&cpu->env) || (cpu->env.v7m.ccr & 2))
+            && ((value & 0x1ff) < NVIC_MAX_IRQ)) {
             armv7m_nvic_set_pending(s, (value&0x1ff)+16);
         }
         break;

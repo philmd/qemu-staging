@@ -338,6 +338,7 @@ void armv7m_nvic_set_pending(void *opaque, int irq)
             irq = ARMV7M_EXCP_HARD;
             vec = &s->vectors[irq];
 
+            s->cpu->env.v7m.hfsr |= 1<<30; /* FORCED */
             DPRINTF(0, "Escalate %d to HardFault\n", oldirq);
         }
     }
@@ -553,16 +554,20 @@ static uint32_t nvic_readl(NVICState *s, uint32_t offset)
         if (s->vectors[ARMV7M_EXCP_USAGE].enabled) val |= (1 << 18);
         return val;
     case 0xd28: /* Configurable Fault Status.  */
-        /* TODO: Implement Fault Status.  */
-        qemu_log_mask(LOG_UNIMP, "Configurable Fault Status unimplemented\n");
-        return 0;
+        return cpu->env.v7m.cfsr;
     case 0xd2c: /* Hard Fault Status.  */
+        return cpu->env.v7m.hfsr;
     case 0xd30: /* Debug Fault Status.  */
-    case 0xd34: /* Mem Manage Address.  */
+        qemu_log_mask(LOG_UNIMP, "Debug Fault status register unimplemented\n");
+        return 0;
+    case 0xd34: /* MMFAR MemManage Fault Address */
+        return cpu->env.v7m.mmfar;
     case 0xd38: /* Bus Fault Address.  */
+        return cpu->env.v7m.bfar;
     case 0xd3c: /* Aux Fault Status.  */
         /* TODO: Implement fault status registers.  */
-        qemu_log_mask(LOG_UNIMP, "Fault status registers unimplemented\n");
+        qemu_log_mask(LOG_UNIMP,
+                      "Aux Fault status registers unimplemented\n");
         return 0;
     case 0xd40: /* PFR0.  */
         return 0x00000030;
@@ -695,13 +700,24 @@ static void nvic_writel(NVICState *s, uint32_t offset, uint32_t value)
          */
         break;
     case 0xd28: /* Configurable Fault Status.  */
+        cpu->env.v7m.cfsr &= ~value; /* W1C */
+        break;
     case 0xd2c: /* Hard Fault Status.  */
+        cpu->env.v7m.hfsr &= ~value; /* W1C */
+        break;
     case 0xd30: /* Debug Fault Status.  */
+        qemu_log_mask(LOG_UNIMP,
+                      "NVIC: debug fault status register unimplemented\n");
+        break;
     case 0xd34: /* Mem Manage Address.  */
+        cpu->env.v7m.mmfar = value;
+        return;
     case 0xd38: /* Bus Fault Address.  */
+        cpu->env.v7m.bfar = value;
+        return;
     case 0xd3c: /* Aux Fault Status.  */
         qemu_log_mask(LOG_UNIMP,
-                      "NVIC: fault status registers unimplemented\n");
+                      "NVIC: Aux fault status registers unimplemented\n");
         break;
     case 0xf00: /* Software Triggered Interrupt Register */
         if ((value & 0x1ff) < NVIC_MAX_IRQ) {

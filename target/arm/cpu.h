@@ -405,6 +405,10 @@ typedef struct CPUARMState {
         uint32_t vecbase;
         uint32_t basepri;
         uint32_t control;
+        uint32_t cfsr; /* Configurable Fault Status */
+        uint32_t hfsr; /* HardFault Status */
+        uint32_t mmfar; /* MemManage Fault Address */
+        uint32_t bfar; /* BusFault Address */
         int exception;
         int exception_prio;
         unsigned pending;

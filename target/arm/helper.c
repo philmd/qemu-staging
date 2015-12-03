@@ -6070,6 +6070,7 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
     switch (cs->exception_index) {
     case EXCP_UDEF:
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_USAGE);
+        env->v7m.cfsr |= 1<<16; /* UNDEFINSTR */
         break;
     case EXCP_SWI:
         /* The PC already points to the next instruction.  */
@@ -6081,6 +6082,8 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
          * should set the MMFAR, etc from exception.fsr and exception.vaddress.
          */
         armv7m_nvic_set_pending(env->nvic, ARMV7M_EXCP_MEM);
+        env->v7m.mmfar = env->exception.vaddress;
+        env->v7m.cfsr = (1<<1)|(1<<7); /* DACCVIOL and MMARVALID */
         break;
     case EXCP_BKPT:
         if (semihosting_enabled()) {

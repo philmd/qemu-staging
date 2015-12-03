@@ -22,7 +22,6 @@
 #include "sysemu/sysemu.h"
 #include "hw/char/pl011.h"
 #include "hw/misc/unimp.h"
-#include "target/arm/cpu.h"
 
 #define GPIO_A 0
 #define GPIO_B 1
@@ -1283,21 +1282,14 @@ static void stellaris_init(const char *kernel_filename, const char *cpu_model,
     vmstate_register_ram_global(sram);
     memory_region_add_subregion(system_memory, 0x20000000, sram);
 
-    nvic = armv7m_init(system_memory, flash_size, NUM_IRQ_LINES,
-                      kernel_filename, cpu_model);
+    armv7m_init(cpu_model);
+    qdev_prop_set_uint32(&first_cpu->parent_obj, "pmsav7-dregion", 8);
+    nvic = DEVICE(object_resolve_path("/machine/nvic", NULL));
+    qdev_prop_set_uint32(nvic, "num-irq", NUM_IRQ_LINES);
+    armv7m_realize(flash_size, kernel_filename);
 
     qdev_connect_gpio_out_named(nvic, "SYSRESETREQ", 0,
                                 qemu_allocate_irq(&do_sys_reset, NULL, 0));
-
-    {
-        /* hack to change the number of MPU regions.
-         * Less of a hack than messing with cpu_model string.
-         * Safe as long as the number is being reduced.
-         */
-        ARMCPU *cpu = ARM_CPU(qemu_get_cpu(0));
-        assert(cpu->pmsav7_dregion>=8);
-        cpu->pmsav7_dregion = 8;
-    }
 
     if (board->dc1 & (1 << 16)) {
         dev = sysbus_create_varargs(TYPE_STELLARIS_ADC, 0x40038000,

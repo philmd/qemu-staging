@@ -406,6 +406,9 @@ typedef struct CPUARMState {
         uint32_t basepri;
         uint32_t control;
         int exception;
+        int exception_prio;
+        unsigned pending;
+        int pending_prio;
     } v7m;
 
     /* Information associated with an exception about to be taken:

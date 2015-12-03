@@ -597,6 +597,12 @@ struct ARMCPU {
     /* PMSAv7 MPU number of supported regions */
     uint32_t pmsav7_dregion;
 
+    /* Some v7-M targets don't implement the full 8 bits
+     * of the priority fields.  Writes to unimplemented
+     * bits are treated as zero (guest can discover mask).
+     */
+    uint8_t v7m_priority_mask;
+
     /* PSCI conduit used to invoke PSCI methods
      * 0 - disabled, 1 - smc, 2 - hvc
      */

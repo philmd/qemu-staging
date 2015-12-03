@@ -8452,6 +8452,8 @@ uint32_t HELPER(v7m_mrs)(CPUARMState *env, uint32_t reg)
 
 void HELPER(v7m_msr)(CPUARMState *env, uint32_t reg, uint32_t val)
 {
+    ARMCPU *cpu = arm_env_get_cpu(env);
+
     if (arm_current_el(env) == 0 && reg > 7) {
         /* only xPSR sub-fields may be written by unprivileged */
         return;
@@ -8486,10 +8488,10 @@ void HELPER(v7m_msr)(CPUARMState *env, uint32_t reg, uint32_t val)
         }
         break;
     case 17: /* BASEPRI */
-        env->v7m.basepri = val & 0xff;
+        env->v7m.basepri = val & cpu->v7m_priority_mask;
         break;
     case 18: /* BASEPRI_MAX */
-        val &= 0xff;
+        val &= cpu->v7m_priority_mask;
         if (val != 0 && (val < env->v7m.basepri || env->v7m.basepri == 0))
             env->v7m.basepri = val;
         break;

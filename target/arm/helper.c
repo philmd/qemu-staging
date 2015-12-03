@@ -6003,7 +6003,7 @@ static void do_v7m_exception_exit(CPUARMState *env)
         break;
     case 0x9: /* Return to Thread mode w/ Main stack */
     case 0xd: /* Return to Thread mode w/ Process stack */
-        if (env->v7m.exception_prio != 0x100) {
+        if ((env->v7m.exception_prio != 0x100) && !(env->v7m.ccr & 1)) {
             /* Attempt to return to Thread mode
              * from nested handler while NONBASETHRDENA not set.
              */
@@ -6195,10 +6195,8 @@ void arm_v7m_cpu_do_interrupt(CPUState *cs)
 
     qemu_log_mask(CPU_LOG_INT, "... as %d\n", env->v7m.exception);
 
-    /* Align stack pointer.  */
-    /* ??? Should only do this if Configuration Control Register
-       STACKALIGN bit is set.  */
-    if (env->regs[13] & 4) {
+    /* Align stack pointer (STACKALIGN)  */
+    if ((env->regs[13] & 4) && (env->v7m.ccr & (1<<9))) {
         env->regs[13] -= 4;
         xpsr |= 0x200;
     }

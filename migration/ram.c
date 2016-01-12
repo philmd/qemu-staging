@@ -264,7 +264,7 @@ struct DecompressParam {
     QemuMutex mutex;
     QemuCond cond;
     void *des;
-    uint8 *compbuf;
+    uint8_t *compbuf;
     int len;
 };
 typedef struct DecompressParam DecompressParam;

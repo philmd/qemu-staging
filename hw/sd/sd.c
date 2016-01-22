@@ -393,8 +393,9 @@ static inline uint64_t sd_addr_to_wpnum(uint64_t addr)
     return addr >> (HWBLOCK_SHIFT + SECTOR_SHIFT + WPGROUP_SHIFT);
 }
 
-static void sd_reset(SDState *sd)
+static void sd_reset(DeviceState *dev)
 {
+    SDState *sd = SD_CARD(dev);
     uint64_t size;
     uint64_t sect;
 
@@ -435,7 +436,7 @@ static void sd_cardchange(void *opaque, bool load)
 
     qemu_set_irq(sd->inserted_cb, blk_is_inserted(sd->blk));
     if (blk_is_inserted(sd->blk)) {
-        sd_reset(sd);
+        sd_reset(DEVICE(sd));
         qemu_set_irq(sd->readonly_cb, sd->wp_switch);
     }
 }
@@ -677,7 +678,7 @@ static sd_rsp_type_t sd_normal_command(SDState *sd,
 
         default:
             sd->state = sd_idle_state;
-            sd_reset(sd);
+            sd_reset(DEVICE(sd));
             return sd->spi ? sd_r1 : sd_r0;
         }
         break;
@@ -1783,8 +1784,6 @@ static void sd_realize(DeviceState *dev, Error **errp)
     if (sd->blk) {
         blk_set_dev_ops(sd->blk, &sd_block_ops, sd);
     }
-
-    sd_reset(sd);
 }
 
 static Property sd_properties[] = {
@@ -1804,6 +1803,7 @@ static void sd_class_init(ObjectClass *klass, void *data)
     dc->realize = sd_realize;
     dc->props = sd_properties;
     dc->vmsd = &sd_vmstate;
+    dc->reset = sd_reset;
 }
 
 static const TypeInfo sd_info = {

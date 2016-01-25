@@ -1617,7 +1617,7 @@ int32_t float32_to_int32_round_to_zero(float32 a, float_status *status)
 | returned.
 *----------------------------------------------------------------------------*/
 
-int_fast16_t float32_to_int16_round_to_zero(float32 a, float_status *status)
+int16_t float32_to_int16_round_to_zero(float32 a, float_status *status)
 {
     flag aSign;
     int_fast16_t aExp, shiftCount;
@@ -3150,7 +3150,7 @@ int32_t float64_to_int32_round_to_zero(float64 a, float_status *status)
 | returned.
 *----------------------------------------------------------------------------*/
 
-int_fast16_t float64_to_int16_round_to_zero(float64 a, float_status *status)
+int16_t float64_to_int16_round_to_zero(float64 a, float_status *status)
 {
     flag aSign;
     int_fast16_t aExp, shiftCount;
@@ -7118,10 +7118,10 @@ uint32_t float32_to_uint32_round_to_zero(float32 a, float_status *status)
     return res;
 }
 
-int_fast16_t float32_to_int16(float32 a, float_status *status)
+int16_t float32_to_int16(float32 a, float_status *status)
 {
     int32_t v;
-    int_fast16_t res;
+    int16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float32_to_int32(a, status);
@@ -7138,10 +7138,10 @@ int_fast16_t float32_to_int16(float32 a, float_status *status)
     return res;
 }
 
-uint_fast16_t float32_to_uint16(float32 a, float_status *status)
+uint16_t float32_to_uint16(float32 a, float_status *status)
 {
     int32_t v;
-    uint_fast16_t res;
+    uint16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float32_to_int32(a, status);
@@ -7158,10 +7158,10 @@ uint_fast16_t float32_to_uint16(float32 a, float_status *status)
     return res;
 }
 
-uint_fast16_t float32_to_uint16_round_to_zero(float32 a, float_status *status)
+uint16_t float32_to_uint16_round_to_zero(float32 a, float_status *status)
 {
     int64_t v;
-    uint_fast16_t res;
+    uint16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float32_to_int64_round_to_zero(a, status);
@@ -7211,10 +7211,10 @@ uint32_t float64_to_uint32_round_to_zero(float64 a, float_status *status)
     return res;
 }
 
-int_fast16_t float64_to_int16(float64 a, float_status *status)
+int16_t float64_to_int16(float64 a, float_status *status)
 {
     int64_t v;
-    int_fast16_t res;
+    int16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float64_to_int32(a, status);
@@ -7231,10 +7231,10 @@ int_fast16_t float64_to_int16(float64 a, float_status *status)
     return res;
 }
 
-uint_fast16_t float64_to_uint16(float64 a, float_status *status)
+uint16_t float64_to_uint16(float64 a, float_status *status)
 {
     int64_t v;
-    uint_fast16_t res;
+    uint16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float64_to_int32(a, status);
@@ -7251,10 +7251,10 @@ uint_fast16_t float64_to_uint16(float64 a, float_status *status)
     return res;
 }
 
-uint_fast16_t float64_to_uint16_round_to_zero(float64 a, float_status *status)
+uint16_t float64_to_uint16_round_to_zero(float64 a, float_status *status)
 {
     int64_t v;
-    uint_fast16_t res;
+    uint16_t res;
     int old_exc_flags = get_float_exception_flags(status);
 
     v = float64_to_int64_round_to_zero(a, status);

@@ -4746,6 +4746,7 @@ static int do_fork(CPUArchState *env, unsigned int flags, abi_ulong newsp,
         new_cpu->opaque = ts;
         ts->bprm = parent_ts->bprm;
         ts->info = parent_ts->info;
+        ts->signal_mask = parent_ts->signal_mask;
         nptl_flags = flags;
         flags &= ~CLONE_NPTL_FLAGS2;
 
@@ -6841,9 +6842,11 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         {
             sigset_t cur_set;
             abi_ulong target_set;
-            do_sigprocmask(0, NULL, &cur_set);
-            host_to_target_old_sigset(&target_set, &cur_set);
-            ret = target_set;
+            ret = do_sigprocmask(0, NULL, &cur_set);
+            if (!ret) {
+                host_to_target_old_sigset(&target_set, &cur_set);
+                ret = target_set;
+            }
         }
         break;
 #endif
@@ -6852,12 +6855,20 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         {
             sigset_t set, oset, cur_set;
             abi_ulong target_set = arg1;
-            do_sigprocmask(0, NULL, &cur_set);
+            /* We only have one word of the new mask so we must read
+             * the rest of it with do_sigprocmask() and OR in this word.
+             * We are guaranteed that a do_sigprocmask() that only queries
+             * the signal mask will not fail.
+             */
+            ret = do_sigprocmask(0, NULL, &cur_set);
+            assert(!ret);
             target_to_host_old_sigset(&set, &target_set);
             sigorset(&set, &set, &cur_set);
-            do_sigprocmask(SIG_SETMASK, &set, &oset);
-            host_to_target_old_sigset(&target_set, &oset);
-            ret = target_set;
+            ret = do_sigprocmask(SIG_SETMASK, &set, &oset);
+            if (!ret) {
+                host_to_target_old_sigset(&target_set, &oset);
+                ret = target_set;
+            }
         }
         break;
 #endif
@@ -6886,7 +6897,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
             mask = arg2;
             target_to_host_old_sigset(&set, &mask);
 
-            ret = get_errno(do_sigprocmask(how, &set, &oldset));
+            ret = do_sigprocmask(how, &set, &oldset);
             if (!is_error(ret)) {
                 host_to_target_old_sigset(&mask, &oldset);
                 ret = mask;
@@ -6920,7 +6931,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                 how = 0;
                 set_ptr = NULL;
             }
-            ret = get_errno(do_sigprocmask(how, set_ptr, &oldset));
+            ret = do_sigprocmask(how, set_ptr, &oldset);
             if (!is_error(ret) && arg3) {
                 if (!(p = lock_user(VERIFY_WRITE, arg3, sizeof(target_sigset_t), 0)))
                     goto efault;
@@ -6960,7 +6971,7 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
                 how = 0;
                 set_ptr = NULL;
             }
-            ret = get_errno(do_sigprocmask(how, set_ptr, &oldset));
+            ret = do_sigprocmask(how, set_ptr, &oldset);
             if (!is_error(ret) && arg3) {
                 if (!(p = lock_user(VERIFY_WRITE, arg3, sizeof(target_sigset_t), 0)))
                     goto efault;
@@ -6998,28 +7009,36 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
 #ifdef TARGET_NR_sigsuspend
     case TARGET_NR_sigsuspend:
         {
-            sigset_t set;
+            TaskState *ts = cpu->opaque;
 #if defined(TARGET_ALPHA)
             abi_ulong mask = arg1;
-            target_to_host_old_sigset(&set, &mask);
+            target_to_host_old_sigset(&ts->sigsuspend_mask, &mask);
 #else
             if (!(p = lock_user(VERIFY_READ, arg1, sizeof(target_sigset_t), 1)))
                 goto efault;
-            target_to_host_old_sigset(&set, p);
+            target_to_host_old_sigset(&ts->sigsuspend_mask, p);
             unlock_user(p, arg1, 0);
 #endif
-            ret = get_errno(safe_rt_sigsuspend(&set, SIGSET_T_SIZE));
+            ret = get_errno(safe_rt_sigsuspend(&ts->sigsuspend_mask,
+                                               SIGSET_T_SIZE));
+            if (ret != -TARGET_ERESTARTSYS) {
+                ts->in_sigsuspend = 1;
+            }
         }
         break;
 #endif
     case TARGET_NR_rt_sigsuspend:
         {
-            sigset_t set;
+            TaskState *ts = cpu->opaque;
             if (!(p = lock_user(VERIFY_READ, arg1, sizeof(target_sigset_t), 1)))
                 goto efault;
-            target_to_host_sigset(&set, p);
+            target_to_host_sigset(&ts->sigsuspend_mask, p);
             unlock_user(p, arg1, 0);
-            ret = get_errno(safe_rt_sigsuspend(&set, SIGSET_T_SIZE));
+            ret = get_errno(safe_rt_sigsuspend(&ts->sigsuspend_mask,
+                                               SIGSET_T_SIZE));
+            if (ret != -TARGET_ERESTARTSYS) {
+                ts->in_sigsuspend = 1;
+            }
         }
         break;
     case TARGET_NR_rt_sigtimedwait:
@@ -7065,11 +7084,19 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
         break;
 #ifdef TARGET_NR_sigreturn
     case TARGET_NR_sigreturn:
-        ret = do_sigreturn(cpu_env);
+        if (block_signals()) {
+            ret = -TARGET_ERESTARTSYS;
+        } else {
+            ret = do_sigreturn(cpu_env);
+        }
         break;
 #endif
     case TARGET_NR_rt_sigreturn:
-        ret = do_rt_sigreturn(cpu_env);
+        if (block_signals()) {
+            ret = -TARGET_ERESTARTSYS;
+        } else {
+            ret = do_rt_sigreturn(cpu_env);
+        }
         break;
     case TARGET_NR_sethostname:
         if (!(p = lock_user_string(arg1)))
@@ -9123,9 +9150,11 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
             }
             mask = arg2;
             target_to_host_old_sigset(&set, &mask);
-            do_sigprocmask(how, &set, &oldset);
-            host_to_target_old_sigset(&mask, &oldset);
-            ret = mask;
+            ret = do_sigprocmask(how, &set, &oldset);
+            if (!ret) {
+                host_to_target_old_sigset(&mask, &oldset);
+                ret = mask;
+            }
         }
         break;
 #endif

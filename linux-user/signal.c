@@ -400,8 +400,9 @@ static void tswap_siginfo(target_siginfo_t *tinfo,
 
 void host_to_target_siginfo(target_siginfo_t *tinfo, const siginfo_t *info)
 {
-    host_to_target_siginfo_noswap(tinfo, info);
-    tswap_siginfo(tinfo, tinfo);
+    target_siginfo_t tgt_tmp;
+    host_to_target_siginfo_noswap(&tgt_tmp, info);
+    tswap_siginfo(tinfo, &tgt_tmp);
 }
 
 /* XXX: we support only POSIX RT signals are used. */

@@ -172,6 +172,7 @@ static void armv7m_realize(DeviceState *dev, Error **errp)
 {
     /* here realize our children */
     ARMv7MState *s = ARMV7M(dev);
+    SysBusDevice *sbd;
     Error *err = NULL;
     int i;
 
@@ -210,9 +211,13 @@ static void armv7m_realize(DeviceState *dev, Error **errp)
     qdev_pass_gpios(DEVICE(&s->nvic), dev, "SYSRESETREQ");
 
     /* Wire the NVIC up to the CPU */
-    sysbus_connect_irq(SYS_BUS_DEVICE(&s->nvic), 0,
+    sbd = SYS_BUS_DEVICE(&s->nvic);
+    sysbus_connect_irq(sbd, 0,
                        qdev_get_gpio_in(DEVICE(s->cpu), ARM_CPU_IRQ));
     s->cpu->env.nvic = &s->nvic;
+
+    memory_region_add_subregion(&s->container, 0xe000e000,
+                                sysbus_mmio_get_region(sbd, 0));
 
     for (i = 0; i < ARRAY_SIZE(s->bitband); i++) {
         Object *obj = OBJECT(&s->bitband[i]);

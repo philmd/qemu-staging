@@ -231,8 +231,7 @@ static void parse_numa_distance(NumaDistOptions *dist, Error **errp)
 
     if (src >= MAX_NODES || dst >= MAX_NODES) {
         error_setg(errp,
-                   "Invalid node %" PRIu16
-                   ", max possible could be %" PRIu16,
+                   "Invalid node %u, max possible could be %u",
                    MAX(src, dst), MAX_NODES);
         return;
     }

@@ -1747,18 +1747,11 @@ static inline bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
  * IDs the AArch64/32 distinction is the KVM_REG_ARM/ARM64
  * in the upper bits of the 64 bit ID.
  */
-#define CP_REG_AA64_SHIFT 28
+#define CP_REG_AA64_SHIFT 29
 #define CP_REG_AA64_MASK (1 << CP_REG_AA64_SHIFT)
 
-/* To enable banking of coprocessor registers depending on ns-bit we
- * add a bit to distinguish between secure and non-secure cpregs in the
- * hashtable.
- */
-#define CP_REG_NS_SHIFT 29
-#define CP_REG_NS_MASK (1 << CP_REG_NS_SHIFT)
-
 #define ENCODE_CP_REG(cp, is64, ns, crn, crm, opc1, opc2)   \
-    ((ns) << CP_REG_NS_SHIFT | ((cp) << 16) | ((is64) << 15) |   \
+    (!(ns) << CP_REG_ARM_SECURE_SHIFT | ((cp) << 16) | ((is64) << 15) |   \
      ((crn) << 11) | ((crm) << 7) | ((opc1) << 3) | (opc2))
 
 #define ENCODE_AA64_CP_REG(cp, crn, crm, op0, op1, op2) \
@@ -1771,7 +1764,7 @@ static inline bool armv7m_nvic_neg_prio_requested(void *opaque, bool secure)
      ((op2) << CP_REG_ARM64_SYSREG_OP2_SHIFT))
 
 /* Convert a full 64 bit KVM register ID to the truncated 32 bit
- * version used as a key for the coprocessor register hashtable
+ * version used as a key for the coprocessor register hashtable.
  */
 static inline uint32_t kvm_to_cpreg_id(uint64_t kvmid)
 {
@@ -1782,11 +1775,6 @@ static inline uint32_t kvm_to_cpreg_id(uint64_t kvmid)
         if ((kvmid & CP_REG_SIZE_MASK) == CP_REG_SIZE_U64) {
             cpregid |= (1 << 15);
         }
-
-        /* KVM is always non-secure so add the NS flag on AArch32 register
-         * entries.
-         */
-         cpregid |= 1 << CP_REG_NS_SHIFT;
     }
     return cpregid;
 }

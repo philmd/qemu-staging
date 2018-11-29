@@ -38,15 +38,6 @@
 #include <Carbon/Carbon.h>
 #include "qom/cpu.h"
 
-#ifndef MAC_OS_X_VERSION_10_5
-#define MAC_OS_X_VERSION_10_5 1050
-#endif
-#ifndef MAC_OS_X_VERSION_10_6
-#define MAC_OS_X_VERSION_10_6 1060
-#endif
-#ifndef MAC_OS_X_VERSION_10_9
-#define MAC_OS_X_VERSION_10_9 1090
-#endif
 #ifndef MAC_OS_X_VERSION_10_10
 #define MAC_OS_X_VERSION_10_10 101000
 #endif
@@ -81,13 +72,6 @@
 #define NSWindowStyleMaskClosable       NSClosableWindowMask
 #define NSWindowStyleMaskMiniaturizable NSMiniaturizableWindowMask
 #define NSWindowStyleMaskTitled         NSTitledWindowMask
-#endif
-/* 10.13 deprecates NSFileHandlingPanelOKButton in favour of
- * NSModalResponseOK, which was introduced in 10.9. Define
- * it for older versions.
- */
-#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_9
-#define NSModalResponseOK NSFileHandlingPanelOKButton
 #endif
 
 //#define DEBUG
@@ -981,9 +965,7 @@ QemuCocoaView *cocoaView;
  ------------------------------------------------------
 */
 @interface QemuCocoaAppController : NSObject
-#if (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)
                                        <NSWindowDelegate, NSApplicationDelegate>
-#endif
 {
 }
 - (void)doToggleFullScreen:(id)sender;
@@ -1032,9 +1014,6 @@ QemuCocoaView *cocoaView;
         [normalWindow setAcceptsMouseMovedEvents:YES];
         [normalWindow setTitle:@"QEMU"];
         [normalWindow setContentView:cocoaView];
-#if (MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10)
-        [normalWindow useOptimizedDrawing:YES];
-#endif
         [normalWindow makeKeyAndOrderFront:self];
         [normalWindow center];
         [normalWindow setDelegate: self];

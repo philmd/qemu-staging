@@ -45,6 +45,10 @@
 #define MAC_OS_X_VERSION_10_12 101200
 #endif
 
+#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_10
+#error QEMU requires at least OSX 10.10
+#endif
+
 /* macOS 10.12 deprecated many constants, #define the new names for older SDKs */
 #if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
 #define NSEventMaskAny                  NSAnyEventMask

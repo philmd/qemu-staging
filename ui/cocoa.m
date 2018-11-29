@@ -1777,12 +1777,6 @@ static void cocoa_refresh(DisplayChangeListener *dcl)
     [pool release];
 }
 
-static void cocoa_cleanup(void)
-{
-    COCOA_DEBUG("qemu_cocoa: cocoa_cleanup\n");
-    g_free(dcl);
-}
-
 static const DisplayChangeListenerOps dcl_ops = {
     .dpy_name          = "cocoa",
     .dpy_gfx_update = cocoa_update,
@@ -1812,9 +1806,6 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     // register vga output callbacks
     dcl->ops = &dcl_ops;
     register_displaychangelistener(dcl);
-
-    // register cleanup function
-    atexit(cocoa_cleanup);
 }
 
 static QemuDisplay qemu_display_cocoa = {

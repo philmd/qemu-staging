@@ -1116,3 +1116,208 @@ static bool trans_VLDM_VSTM_dp(DisasContext *s, arg_VLDM_VSTM_dp *a)
 
     return true;
 }
+
+/*
+ * Types for callbacks for do_vfp_3op_sp() and do_vfp_3op_dp().
+ * The callback should emit code to write a value to vd. If
+ * do_vfp_3op_{sp,dp}() was passed reads_vd then the TCGv vd
+ * will contain the old value of the relevant VFP register;
+ * otherwise it must be written to only.
+ */
+typedef void VFPGen3OpSPFn(TCGv_i32 vd,
+                           TCGv_i32 vn, TCGv_i32 vm, TCGv_ptr fpst);
+typedef void VFPGen3OpDPFn(TCGv_i64 vd,
+                           TCGv_i64 vn, TCGv_i64 vm, TCGv_ptr fpst);
+
+/*
+ * Perform a 3-operand VFP data processing instruction. fn is the
+ * callback to do the actual operation; this function deals with the
+ * code to handle looping around for VFP vector processing.
+ */
+static bool do_vfp_3op_sp(DisasContext *s, VFPGen3OpSPFn *fn,
+                          int vd, int vn, int vm, bool reads_vd)
+{
+    uint32_t delta_m = 0;
+    uint32_t delta_d = 0;
+    uint32_t bank_mask = 0;
+    int veclen = s->vec_len;
+    TCGv_i32 f0, f1, fd;
+    TCGv_ptr fpst;
+
+    if (!dc_isar_feature(aa32_fpshvec, s) &&
+        (veclen != 0 || s->vec_stride != 0)) {
+        return false;
+    }
+
+    if (!vfp_access_check(s)) {
+        return true;
+    }
+
+    if (veclen > 0) {
+        bank_mask = 0x18;
+
+        /* Figure out what type of vector operation this is.  */
+        if ((vd & bank_mask) == 0) {
+            /* scalar */
+            veclen = 0;
+        } else {
+            delta_d = s->vec_stride + 1;
+
+            if ((vm & bank_mask) == 0) {
+                /* mixed scalar/vector */
+                delta_m = 0;
+            } else {
+                /* vector */
+                delta_m = delta_d;
+            }
+        }
+    }
+
+    f0 = tcg_temp_new_i32();
+    f1 = tcg_temp_new_i32();
+    fd = tcg_temp_new_i32();
+    fpst = get_fpstatus_ptr(0);
+
+    tcg_gen_ld_f32(f0, cpu_env, vfp_reg_offset(false, vn));
+    tcg_gen_ld_f32(f1, cpu_env, vfp_reg_offset(false, vm));
+
+    for (;;) {
+        if (reads_vd) {
+            tcg_gen_ld_f32(fd, cpu_env, vfp_reg_offset(false, vd));
+        }
+        fn(fd, f0, f1, fpst);
+        tcg_gen_st_f32(fd, cpu_env, vfp_reg_offset(false, vd));
+
+        if (veclen == 0) {
+            break;
+        }
+
+        /* Set up the operands for the next iteration */
+        veclen--;
+        vd = ((vd + delta_d) & (bank_mask - 1)) | (vd & bank_mask);
+        vn = ((vn + delta_d) & (bank_mask - 1)) | (vn & bank_mask);
+        tcg_gen_ld_f32(f0, cpu_env, vfp_reg_offset(false, vn));
+        if (delta_m) {
+            vm = ((vm + delta_m) & (bank_mask - 1)) | (vm & bank_mask);
+            tcg_gen_ld_f32(f1, cpu_env, vfp_reg_offset(false, vm));
+        }
+    }
+
+    tcg_temp_free_i32(f0);
+    tcg_temp_free_i32(f1);
+    tcg_temp_free_i32(fd);
+    tcg_temp_free_ptr(fpst);
+
+    return true;
+}
+
+static bool do_vfp_3op_dp(DisasContext *s, VFPGen3OpDPFn *fn,
+                          int vd, int vn, int vm, bool reads_vd)
+{
+    uint32_t delta_m = 0;
+    uint32_t delta_d = 0;
+    uint32_t bank_mask = 0;
+    int veclen = s->vec_len;
+    TCGv_i64 f0, f1, fd;
+    TCGv_ptr fpst;
+
+    /* UNDEF accesses to D16-D31 if they don't exist */
+    if (!dc_isar_feature(aa32_fp_d32, s) && ((vd | vn | vm) & 0x10)) {
+        return false;
+    }
+
+    if (!dc_isar_feature(aa32_fpshvec, s) &&
+        (veclen != 0 || s->vec_stride != 0)) {
+        return false;
+    }
+
+    if (!vfp_access_check(s)) {
+        return true;
+    }
+
+    if (veclen > 0) {
+        bank_mask = 0xc;
+
+        /* Figure out what type of vector operation this is.  */
+        if ((vd & bank_mask) == 0) {
+            /* scalar */
+            veclen = 0;
+        } else {
+            delta_d = (s->vec_stride >> 1) + 1;
+
+            if ((vm & bank_mask) == 0) {
+                /* mixed scalar/vector */
+                delta_m = 0;
+            } else {
+                /* vector */
+                delta_m = delta_d;
+            }
+        }
+    }
+
+    f0 = tcg_temp_new_i64();
+    f1 = tcg_temp_new_i64();
+    fd = tcg_temp_new_i64();
+    fpst = get_fpstatus_ptr(0);
+
+    tcg_gen_ld_f64(f0, cpu_env, vfp_reg_offset(true, vn));
+    tcg_gen_ld_f64(f1, cpu_env, vfp_reg_offset(true, vm));
+
+    for (;;) {
+        if (reads_vd) {
+            tcg_gen_ld_f64(fd, cpu_env, vfp_reg_offset(true, vd));
+        }
+        fn(fd, f0, f1, fpst);
+        tcg_gen_st_f64(fd, cpu_env, vfp_reg_offset(true, vd));
+
+        if (veclen == 0) {
+            break;
+        }
+        /* Set up the operands for the next iteration */
+        veclen--;
+        vd = ((vd + delta_d) & (bank_mask - 1)) | (vd & bank_mask);
+        vn = ((vn + delta_d) & (bank_mask - 1)) | (vn & bank_mask);
+        tcg_gen_ld_f64(f0, cpu_env, vfp_reg_offset(true, vn));
+        if (delta_m) {
+            vm = ((vm + delta_m) & (bank_mask - 1)) | (vm & bank_mask);
+            tcg_gen_ld_f64(f1, cpu_env, vfp_reg_offset(true, vm));
+        }
+    }
+
+    tcg_temp_free_i64(f0);
+    tcg_temp_free_i64(f1);
+    tcg_temp_free_i64(fd);
+    tcg_temp_free_ptr(fpst);
+
+    return true;
+}
+
+static void gen_VMLA_sp(TCGv_i32 vd, TCGv_i32 vn, TCGv_i32 vm, TCGv_ptr fpst)
+{
+    /* Note that order of inputs to the add matters for NaNs */
+    TCGv_i32 tmp = tcg_temp_new_i32();
+
+    gen_helper_vfp_muls(tmp, vn, vm, fpst);
+    gen_helper_vfp_adds(vd, vd, tmp, fpst);
+    tcg_temp_free_i32(tmp);
+}
+
+static bool trans_VMLA_sp(DisasContext *s, arg_VMLA_sp *a)
+{
+    return do_vfp_3op_sp(s, gen_VMLA_sp, a->vd, a->vn, a->vm, true);
+}
+
+static void gen_VMLA_dp(TCGv_i64 vd, TCGv_i64 vn, TCGv_i64 vm, TCGv_ptr fpst)
+{
+    /* Note that order of inputs to the add matters for NaNs */
+    TCGv_i64 tmp = tcg_temp_new_i64();
+
+    gen_helper_vfp_muld(tmp, vn, vm, fpst);
+    gen_helper_vfp_addd(vd, vd, tmp, fpst);
+    tcg_temp_free_i64(tmp);
+}
+
+static bool trans_VMLA_dp(DisasContext *s, arg_VMLA_sp *a)
+{
+    return do_vfp_3op_dp(s, gen_VMLA_dp, a->vd, a->vn, a->vm, true);
+}

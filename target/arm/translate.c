@@ -3102,7 +3102,7 @@ static int disas_vfp_insn(DisasContext *s, uint32_t insn)
             rn = VFP_SREG_N(insn);
 
             switch (op) {
-            case 0 ... 3:
+            case 0 ... 4:
                 /* Already handled by decodetree */
                 return 1;
             default:
@@ -3288,9 +3288,6 @@ static int disas_vfp_insn(DisasContext *s, uint32_t insn)
             for (;;) {
                 /* Perform the calculation.  */
                 switch (op) {
-                case 4: /* mul: fn * fm */
-                    gen_vfp_mul(dp);
-                    break;
                 case 5: /* nmul: -(fn * fm) */
                     gen_vfp_mul(dp);
                     gen_vfp_neg(dp);

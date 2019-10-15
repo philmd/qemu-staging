@@ -1,10 +1,11 @@
 APEI tables generating and CPER record
 ======================================
 
-Copyright (c) 2019 HUAWEI TECHNOLOGIES CO., LTD.
+..
+   Copyright (c) 2019 HUAWEI TECHNOLOGIES CO., LTD.
 
-This work is licensed under the terms of the GNU GPL, version 2 or later.
-See the COPYING file in the top-level directory.
+   This work is licensed under the terms of the GNU GPL, version 2 or later.
+   See the COPYING file in the top-level directory.
 
 Design Details
 --------------
@@ -90,5 +91,5 @@ Design Details
     is necessary for notifying the guest.
 
 (10) This notification (in virtual hardware) will be handled by the guest
-    kernel, guest APEI driver will read the CPER which is recorded by QEMU and
-    do the recovery.
+     kernel, guest APEI driver will read the CPER which is recorded by QEMU and
+     do the recovery.

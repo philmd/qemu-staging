@@ -132,8 +132,8 @@ static int acpi_ghes_record_mem_error(uint64_t error_block_address,
     uint64_t current_block_length;
     /* Memory Error Section Type */
     QemuUUID mem_section_id_le = UEFI_CPER_SEC_PLATFORM_MEM;
-    QemuUUID fru_id = {0};
-    uint8_t fru_text[20] = {0};
+    QemuUUID fru_id = {};
+    uint8_t fru_text[20] = {};
 
     /*
      * Generic Error Status Block
@@ -327,7 +327,7 @@ void acpi_ghes_build_hest(GArray *table_data, GArray *hardware_errors,
     build_append_int_noprefix(table_data, ACPI_GHES_MAX_RAW_DATA_LENGTH, 4);
 
     /* Error Status Address */
-    build_append_gas(table_data, AML_SYSTEM_MEMORY, 0x40, 0,
+    build_append_gas(table_data, AML_AS_SYSTEM_MEMORY, 0x40, 0,
                      4 /* QWord access */, 0);
     bios_linker_loader_add_pointer(linker, ACPI_BUILD_TABLE_FILE,
         ACPI_GHES_ERROR_STATUS_ADDRESS_OFFSET(hest_start, source_id),
@@ -348,7 +348,7 @@ void acpi_ghes_build_hest(GArray *table_data, GArray *hardware_errors,
      * ACPI 6.1: 18.3.2.8 Generic Hardware Error Source
      * version 2 (GHESv2 - Type 10)
      */
-    build_append_gas(table_data, AML_SYSTEM_MEMORY, 0x40, 0,
+    build_append_gas(table_data, AML_AS_SYSTEM_MEMORY, 0x40, 0,
                      4 /* QWord access */, 0);
     bios_linker_loader_add_pointer(linker, ACPI_BUILD_TABLE_FILE,
         ACPI_GHES_READ_ACK_REGISTER_ADDRESS_OFFSET(hest_start, 0),
